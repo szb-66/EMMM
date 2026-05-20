@@ -40,8 +40,8 @@ class WorkflowService:
         """
         Flow 4.1.B Step 5: Orchestrates the creation of multiple objectlist items.
         """
-        successful_creations = []
-        failed_creations = []
+        successful_items = []
+        failed_items = []
         total_tasks = len(tasks)
 
         logger.info(f"Starting object creation workflow for {total_tasks} task(s).")
@@ -52,19 +52,23 @@ class WorkflowService:
                 result = self.mod_service.create_manual_object(parent_path, task["data"])
 
                 if result["success"]:
-                    successful_creations.append(result["data"])
+                    successful_items.append(result["data"])
                 else:
-                    failed_creations.append({"task": task, "reason": result["error"]})
+                    failed_items.append({"task": task, "reason": result["error"]})
 
             except Exception as e:
                 logger.error(f"Critical error during creation task {task}: {e}", exc_info=True)
-                failed_creations.append({"task": task, "reason": str(e)})
+                failed_items.append({"task": task, "reason": str(e)})
 
             # Emit progress if a callback is provided
             if progress_callback:
                 progress_callback.emit(idx + 1, total_tasks)
 
-        return {"success": successful_creations, "failed": failed_creations}
+        return {
+            "successful_items": successful_items,
+            "failed_items": failed_items,
+            "cancelled_count": 0,
+        }
 
     # --- High-Risk Transactional Workflows ---
     def apply_safe_mode(self, items: list, is_on: bool) -> dict:

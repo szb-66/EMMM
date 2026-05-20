@@ -7,7 +7,9 @@ from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 from qfluentwidgets import MessageBox
 from app.models.mod_item_model import FolderItem, ModStatus
 from app.services.Iniparsing_service import IniKeyParsingService, KeyBinding
+from app.services.config_service import ConfigService, ConfigSaveError
 from app.services.mod_service import ModService
+from app.services.persist_utils import find_game_root_from_folder
 from app.services.thumbnail_service import ThumbnailService
 
 from app.utils import SystemUtils
@@ -37,6 +39,7 @@ class PreviewPanelViewModel(QObject):
     def __init__(
         self,
         mod_service,
+        config_service,
         ini_parsing_service,
         thumbnail_service,
         image_utils,
@@ -48,6 +51,7 @@ class PreviewPanelViewModel(QObject):
         self.foldergrid_vm: ModListViewModel = foldergrid_vm
         self.sys_utils: SystemUtils = sys_utils
         self.mod_service: ModService = mod_service
+        self.config_service: ConfigService = config_service
         self.ini_parsing_service: IniKeyParsingService = ini_parsing_service
         self.image_utils: ImageUtils = image_utils
         self.thumbnail_service: ThumbnailService = thumbnail_service
@@ -62,6 +66,18 @@ class PreviewPanelViewModel(QObject):
         )  # A mutable list of KeyBinding objects for live edits
 
     # ---Public Methods (API for the View) ---
+    def get_description_editor_height(self) -> int:
+        config = self.config_service.load_config()
+        return config.description_editor_height or 80
+
+    def save_description_editor_height(self, height: int) -> None:
+        height = max(60, min(320, int(height)))
+        try:
+            self.config_service.save_setting(
+                "description_editor_height", height, section="ui"
+            )
+        except ConfigSaveError as e:
+            logger.error(f"Failed to save description editor height: {e}")
 
     def _create_dict_from_item(self, item: FolderItem) -> dict:
         """Helper to create a view-ready dictionary from a FolderItem model."""
@@ -136,9 +152,20 @@ class PreviewPanelViewModel(QObject):
         # run new async loader in worker thread → no UI freeze
         folder_path = self.current_item_model.folder_path
 
+        # Find game root by walking up from the mod folder (most reliable)
+        game_root_path = find_game_root_from_folder(folder_path)
+
+        # Fallback: try game.path directly (in case folder walk fails)
+        if game_root_path is None and self.foldergrid_vm.current_game and self.foldergrid_vm.current_game.path:
+            candidate = self.foldergrid_vm.current_game.path
+            if (candidate / "d3dx_user.ini").is_file():
+                game_root_path = candidate
+
         worker = Worker(
             lambda: asyncio.run(
-                self.ini_parsing_service.load_keybindings_async(folder_path)
+                self.ini_parsing_service.load_keybindings_async(
+                    folder_path, game_root_path
+                )
             )
         )
         worker.signals.result.connect(self._on_ini_config_loaded)

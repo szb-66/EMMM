@@ -1134,8 +1134,9 @@ class ModListViewModel(QObject):
             created_object_data = tasks_info[0].get("data", {})
             object_name = created_object_data.get("name", "New Mod")
             self.toast_requested.emit(f"Successfully created '{object_name}'.", "success")
-            self.object_created.emit(created_object_data)
-            self._item_to_select_after_load = object_name
+            if self.context == CONTEXT_OBJECTLIST:
+                self._item_to_select_after_load = object_name
+                self.object_created.emit(created_object_data)
         else:
             # 1. Build the summary message
             summary_parts = []
@@ -1162,9 +1163,12 @@ class ModListViewModel(QObject):
         # Only perform the smart refresh if items were actually created.
         if successful_items:
             logger.info(f"Performing Smart Refresh with {len(successful_items)} new item(s).")
-            newly_created_skeletons = [FolderItem(**item_data) for item_data in successful_items]
-            self.master_list.extend(newly_created_skeletons)
-            self.apply_filters_and_search()
+            if self.context == CONTEXT_OBJECTLIST:
+                self.list_refresh_requested.emit()
+            else:
+                newly_created_skeletons = [FolderItem(**item_data) for item_data in successful_items]
+                self.master_list.extend(newly_created_skeletons)
+                self.apply_filters_and_search()
 
 
     def retry_creation_with_password(self, task: dict, password: str):

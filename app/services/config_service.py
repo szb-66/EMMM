@@ -70,6 +70,8 @@ class ConfigService:
             ui_prefs = data.get("ui", {})
             geometry = tuple(ui_prefs.get("window_geometry")) if "window_geometry" in ui_prefs and ui_prefs.get("window_geometry") is not None else None
             splitter_sizes = tuple(ui_prefs.get("splitter_sizes")) if "splitter_sizes" in ui_prefs and ui_prefs.get("splitter_sizes") is not None else None
+            description_editor_height = ui_prefs.get("description_editor_height")
+            object_list_view_mode = ui_prefs.get("object_list_view_mode", "list")
 
             # Validate geometry and splitter_sizes
             if geometry and len(geometry) != 4:
@@ -78,6 +80,17 @@ class ConfigService:
             if splitter_sizes and len(splitter_sizes) != 3:
                 logger.warning(f"splitter_sizes has {len(splitter_sizes)} values, expected 3. Ignoring.")
                 splitter_sizes = None
+            if not isinstance(description_editor_height, int) or not (60 <= description_editor_height <= 320):
+                if description_editor_height is not None:
+                    logger.warning(
+                        f"description_editor_height={description_editor_height} is invalid. Ignoring."
+                    )
+                description_editor_height = None
+            if object_list_view_mode not in {"list", "card"}:
+                logger.warning(
+                    f"object_list_view_mode={object_list_view_mode!r} is invalid. Falling back to list."
+                )
+                object_list_view_mode = "list"
 
             logger.info("Successfully loaded configuration from config.json.")
             return AppConfig(
@@ -88,6 +101,8 @@ class ConfigService:
                 auto_play_on_startup=auto_play_on_startup,
                 window_geometry=geometry,
                 splitter_sizes=splitter_sizes,
+                description_editor_height=description_editor_height,
+                object_list_view_mode=object_list_view_mode,
                 # preset will be handled later
             )
 
@@ -106,6 +121,25 @@ class ConfigService:
         logger.info(f"Saving configuration to {self.config_path}...")
 
         try:
+            existing_ui = {}
+            if self.config_path.exists():
+                try:
+                    with open(self.config_path, "r", encoding="utf-8") as f:
+                        existing_ui = json.load(f).get("ui", {})
+                except (IOError, json.JSONDecodeError):
+                    existing_ui = {}
+
+            description_editor_height = (
+                config.description_editor_height
+                if config.description_editor_height is not None
+                else existing_ui.get("description_editor_height")
+            )
+            object_list_view_mode = (
+                config.object_list_view_mode
+                if config.object_list_view_mode in {"list", "card"}
+                else existing_ui.get("object_list_view_mode", "list")
+            )
+
             # 1. Build the main dictionary from the AppConfig object
             config_data = {
                 "settings": {
@@ -117,6 +151,8 @@ class ConfigService:
                 "ui": {
                     "window_geometry": config.window_geometry,
                     "splitter_sizes": config.splitter_sizes,
+                    "description_editor_height": description_editor_height,
+                    "object_list_view_mode": object_list_view_mode,
                 },
                 "games": [
                     {

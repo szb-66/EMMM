@@ -1,7 +1,7 @@
 # app/views/sections/objectlist_panel.py
 from typing import Dict
 
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
 from PyQt6.QtWidgets import (
     QListWidgetItem,
     QDialog,
@@ -57,11 +57,14 @@ class ObjectListPanel(QWidget):
         self.main_window = parent if parent else self
         self.view_model = viewmodel
         self._item_widgets: Dict[str, QListWidgetItem] = {}
+        self._last_items_data: list[dict] = []
+        self._view_mode = self._load_view_mode()
 
         self.filter_menu = None
         self.filter_widgets = {}  # To store created filter ComboBoxes
         self._init_ui()
         self._connect_signals()
+        self._apply_list_view_mode()
 
     def _init_ui(self):
         """Initializes all UI components for this panel using fluent layouts."""
@@ -82,6 +85,9 @@ class ObjectListPanel(QWidget):
 
         toolbar_layout.addWidget(self.search_bar)
         toolbar_layout.addWidget(self.filter_btn)
+        self.view_mode_button = TransparentToolButton(FluentIcon.VIEW, self)
+        self.view_mode_button.setToolTip("Switch to card view")
+        toolbar_layout.addWidget(self.view_mode_button)
         self.create_button = PrimaryToolButton(FluentIcon.ADD, self)
         self.create_button.setToolTip("Create new object")
         self.create_button.setEnabled(False)
@@ -106,12 +112,6 @@ class ObjectListPanel(QWidget):
         self.list_widget.setObjectName("ObjectListWidget")
         self.list_widget.setUniformItemSizes(True)
         self.list_widget.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-        border_color = themeColor().name()
-        self.list_widget.setStyleSheet(
-            "QListWidget { border: none; background: transparent; padding-right: 5px; }"
-            "QListWidget::item { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }"
-            f"""QListWidget::item:selected {{ background: rgba(255, 255, 255, 0.08); border-left: 4px solid {border_color}; }}"""
-        )
 
         self.empty_state_widget = QWidget(self)
         empty_layout = QVBoxLayout(self.empty_state_widget)
@@ -197,6 +197,7 @@ class ObjectListPanel(QWidget):
 
         # --- Connect UI widget actions to ViewModel slots ---
         self.search_bar.textChanged.connect(self.view_model.on_search_query_changed)
+        self.view_mode_button.clicked.connect(self._toggle_view_mode)
         self.create_button.clicked.connect(self._on_create_object_requested)
         self.empty_action_button.clicked.connect(self._on_create_object_requested)
         self.view_model.sync_confirmation_requested.connect(self._on_sync_confirmation_requested)
@@ -215,6 +216,7 @@ class ObjectListPanel(QWidget):
         self.create_button.setEnabled(False)
         self.list_widget.clear()
         self._item_widgets.clear()
+        self._last_items_data = []
         self.stack.setCurrentWidget(self.shimmer_frame)
 
     def _on_loading_finished(self):
@@ -222,13 +224,19 @@ class ObjectListPanel(QWidget):
         # self.shimmer_frame.stop_shimmer()
         pass
 
-    def _on_items_updated(self, items_data: list, item_id_to_select: str | None):
+    def _on_items_updated(
+        self,
+        items_data: list,
+        item_id_to_select: str | None,
+        activate_selected: bool = True,
+    ):
         """
         Repopulates the list view and intelligently updates the view state
         (list, empty, or no results).
         """
         self.list_widget.clear()
         self._item_widgets.clear()
+        self._last_items_data = items_data
 
         # --- UI Feedback Logic ---
         if not items_data:
@@ -245,10 +253,11 @@ class ObjectListPanel(QWidget):
             item_widget = ObjectListItemWidget(
                 item_data=item_data,
                 viewmodel=self.view_model,
+                display_mode=self._view_mode,
             )
             item_widget.item_selected.connect(self._on_list_item_clicked)
 
-            list_item.setSizeHint(item_widget.sizeHint())
+            list_item.setSizeHint(self._item_size_hint())
             self.list_widget.addItem(list_item)
             self.list_widget.setItemWidget(list_item, item_widget)
 
@@ -263,6 +272,12 @@ class ObjectListPanel(QWidget):
 
                 # Beri tahu ViewModel bahwa seleksi sudah diatur di UI
                 self.view_model.set_active_selection(item_id_to_select)
+                selected_data = next(
+                    (item for item in items_data if item.get("id") == item_id_to_select),
+                    None,
+                )
+                if activate_selected and selected_data:
+                    self.item_selected.emit(selected_data)
 
     def _on_list_item_clicked(self, item_data: dict):
         """Forwards the item selection event upwards to the main window."""
@@ -276,6 +291,7 @@ class ObjectListPanel(QWidget):
     def _on_item_needs_update(self, item_data: dict):
         """Flow 2.2 Stage 2: Finds and redraws a single widget for a targeted update."""
         item_id = item_data.get("id") or ""
+        self._replace_cached_item_data(item_data)
         list_or_item_widget = self._item_widgets.get(item_id)
 
         if not list_or_item_widget:
@@ -288,6 +304,112 @@ class ObjectListPanel(QWidget):
 
         if isinstance(widget, ObjectListItemWidget):
             widget.set_data(item_data)
+
+    def _load_view_mode(self) -> str:
+        main_vm = getattr(self.main_window, "main_window_vm", None)
+        config_service = getattr(main_vm, "config_service", None)
+        if not config_service:
+            return "list"
+
+        config = config_service.load_config()
+        return config.object_list_view_mode if config.object_list_view_mode in {"list", "card"} else "list"
+
+    def _save_view_mode(self):
+        main_vm = getattr(self.main_window, "main_window_vm", None)
+        config_service = getattr(main_vm, "config_service", None)
+        if not config_service:
+            return
+
+        try:
+            config_service.save_setting("object_list_view_mode", self._view_mode, section="ui")
+        except Exception as exc:
+            logger.warning(f"Failed to save object list view mode: {exc}")
+
+    def _toggle_view_mode(self):
+        self._view_mode = "card" if self._view_mode == "list" else "list"
+        self._apply_list_view_mode()
+        self._save_view_mode()
+        selected_item_id = self.view_model.last_selected_item_id
+        self._last_items_data = self._get_current_view_data()
+        self._on_items_updated(self._last_items_data, selected_item_id, activate_selected=False)
+
+    def _replace_cached_item_data(self, item_data: dict):
+        item_id = item_data.get("id")
+        if not item_id:
+            return
+
+        for index, cached_item in enumerate(self._last_items_data):
+            if cached_item.get("id") == item_id:
+                self._last_items_data[index] = item_data
+                return
+
+    def _get_current_view_data(self) -> list[dict]:
+        displayed_items = getattr(self.view_model, "displayed_items", None)
+        create_dict = getattr(self.view_model, "_create_dict_from_item", None)
+        if displayed_items is None or create_dict is None:
+            return self._last_items_data
+
+        try:
+            return [create_dict(item) for item in displayed_items]
+        except Exception as exc:
+            logger.warning(f"Failed to rebuild object list data from ViewModel: {exc}")
+            return self._last_items_data
+
+    def _apply_list_view_mode(self):
+        border_color = themeColor().name()
+
+        if self._view_mode == "card":
+            self.view_mode_button.setIcon(FluentIcon.MENU)
+            self.view_mode_button.setToolTip("Switch to list view")
+            self.list_widget.setViewMode(QListWidget.ViewMode.IconMode)
+            self.list_widget.setMovement(QListWidget.Movement.Static)
+            self.list_widget.setResizeMode(QListWidget.ResizeMode.Adjust)
+            self.list_widget.setWrapping(True)
+            self.list_widget.setSpacing(6)
+            self.list_widget.setUniformItemSizes(True)
+            self.list_widget.setStyleSheet(
+                "QListWidget { border: none; background: transparent; padding: 4px 5px 4px 5px; }"
+                "QListWidget::item { border-radius: 6px; }"
+                f"QListWidget::item:selected {{ background: rgba(255, 255, 255, 0.08); border: 1px solid {border_color}; }}"
+            )
+            self._update_card_grid_size()
+        else:
+            self.view_mode_button.setIcon(FluentIcon.VIEW)
+            self.view_mode_button.setToolTip("Switch to card view")
+            self.list_widget.setViewMode(QListWidget.ViewMode.ListMode)
+            self.list_widget.setMovement(QListWidget.Movement.Static)
+            self.list_widget.setResizeMode(QListWidget.ResizeMode.Fixed)
+            self.list_widget.setWrapping(False)
+            self.list_widget.setSpacing(0)
+            self.list_widget.setUniformItemSizes(True)
+            self.list_widget.setGridSize(QSize())
+            self.list_widget.setStyleSheet(
+                "QListWidget { border: none; background: transparent; padding-right: 5px; }"
+                "QListWidget::item { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }"
+                f"QListWidget::item:selected {{ background: rgba(255, 255, 255, 0.08); border-left: 4px solid {border_color}; }}"
+            )
+
+    def _item_size_hint(self) -> QSize:
+        if self._view_mode == "card":
+            return self.list_widget.gridSize() if self.list_widget.gridSize().isValid() else QSize(90, 142)
+        return QSize(0, 92)
+
+    def _update_card_grid_size(self):
+        if self._view_mode != "card":
+            return
+
+        viewport_width = max(1, self.list_widget.viewport().width())
+        spacing = self.list_widget.spacing()
+        available_width = max(1, viewport_width - spacing * 2 - 12)
+        item_width = max(86, available_width // 3)
+        self.list_widget.setGridSize(QSize(item_width, 142))
+
+        for list_item in self._item_widgets.values():
+            list_item.setSizeHint(QSize(item_width, 142))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_card_grid_size()
 
     def _on_active_selection_changed(self, selected_item_id: str | None):
         """

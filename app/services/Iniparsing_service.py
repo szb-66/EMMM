@@ -10,6 +10,13 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from app.services.persist_utils import (
+    normalize_persist_key,
+    read_user_persist_values,
+    strip_disabled_prefix,
+    find_game_root_from_folder,
+    write_user_persist_values,
+)
 from app.utils.logger_utils import logger
 
 
@@ -20,6 +27,8 @@ class Assignment:
     variable: str
     cycle_options: List[str]
     current_value: str  # The actual current value from [Constants]
+    is_persistent: bool = False
+    persist_key: Optional[str] = None
 
 
 @dataclass
@@ -72,9 +81,11 @@ class IniKeyParsingService:
         "release_transition_type",
     }
     VAR_REGEX = re.compile(r".*(\$\w+)")
-    _cache: dict[Path, tuple[float, list[KeyBinding]]] = {}  # {folder: (mtime, data)}
+    _cache: dict[Path, tuple[tuple[float, float], list[KeyBinding]]] = {}
 
-    async def load_keybindings_async(self, folder_path: Path) -> dict:
+    async def load_keybindings_async(
+        self, folder_path: Path, game_root_path: Path | None = None
+    ) -> dict:
         """
         Non-blocking load:
         • pakai cache berdasarkan newest mtime di folder.
@@ -87,8 +98,15 @@ class IniKeyParsingService:
         newest_mtime = max(
             (p.stat().st_mtime for p in folder_path.rglob("*.ini")), default=0.0
         )
+        user_config_path = self._get_user_config_path(game_root_path)
+        user_config_mtime = (
+            user_config_path.stat().st_mtime
+            if user_config_path and user_config_path.is_file()
+            else 0.0
+        )
+        cache_stamp = (newest_mtime, user_config_mtime)
         cached = self._cache.get(folder_path)
-        if cached and cached[0] >= newest_mtime:
+        if cached and cached[0] == cache_stamp:
             return {"success": True, "data": cached[1]}
 
         # --- scan files (stage-1 fn) --------------------------------------
@@ -96,9 +114,11 @@ class IniKeyParsingService:
         if not ini_files:
             return {"success": True, "data": []}
 
+        runtime_persist_values = read_user_persist_values(user_config_path)
+
         # --- parse concurrently ------------------------------------------
         def _parse(path: Path) -> list[KeyBinding]:
-            return self._parse_single_ini(path)
+            return self._parse_single_ini(path, game_root_path, runtime_persist_values)
 
         bindings: list[KeyBinding] = []
         with ThreadPoolExecutor() as ex:
@@ -110,7 +130,7 @@ class IniKeyParsingService:
                     logger.error("Parsing failed: %s", e, exc_info=True)
 
         # --- store cache & return ----------------------------------------
-        self._cache[folder_path] = (newest_mtime, bindings)
+        self._cache[folder_path] = (cache_stamp, bindings)
         return {"success": True, "data": bindings}
 
     # ---------- file discovery (depth-limited, ordered) ----------
@@ -153,7 +173,12 @@ class IniKeyParsingService:
     def _get_ini_files(self, folder_path: Path) -> List[Path]:
         return self._scan_ini_files_sync(folder_path, 4)
 
-    def _parse_single_ini(self, file_path: Path) -> list[KeyBinding]:
+    def _parse_single_ini(
+        self,
+        file_path: Path,
+        game_root_path: Path | None = None,
+        runtime_persist_values: dict[str, str] | None = None,
+    ) -> list[KeyBinding]:
         """
         Baca file sekali → hasilkan list KeyBinding.
         - Menangani baris '$var = …' sebelum header sbg local constants
@@ -162,13 +187,20 @@ class IniKeyParsingService:
         """
         keybindings: list[KeyBinding] = []
         local_constants: dict[str, str] = {}
+        persistent_vars: set[str] = set()
+        runtime_persist_values = runtime_persist_values or {}
 
         # -------- pass: scan lines, split section & constants ---------------
         sections: dict[str, list[str]] = {}
         cur_name: str | None = None
         cur_lines: list[str] = []
+        file_namespace: str | None = None
 
         var_line = re.compile(r"\s*\$(\w+)\s*=\s*(.*)")
+        persist_line = re.compile(
+            r"\s*global\s+persist\s+(\$\w+)\s*=\s*(.*)", re.IGNORECASE
+        )
+        namespace_line = re.compile(r"\s*namespace\s*=\s*(.+)", re.IGNORECASE)
         for line in file_path.read_text(encoding="utf-8", errors="ignore").splitlines(
             keepends=True
         ):
@@ -183,9 +215,18 @@ class IniKeyParsingService:
 
             # collect constants when not inside section
             if cur_name is None:
+                nm = namespace_line.match(stripped)
+                if nm:
+                    file_namespace = nm.group(1).strip()
+                    continue
+                pm = persist_line.match(stripped)
+                if pm:
+                    persistent_vars.add(pm.group(1))
+                    local_constants[pm.group(1)] = pm.group(2).strip()
+                    continue
                 m = var_line.match(stripped)
                 if m:
-                    local_constants[m.group(1)] = m.group(2)
+                    local_constants[f"${m.group(1)}"] = m.group(2)
                 continue
 
             # inside section
@@ -200,7 +241,10 @@ class IniKeyParsingService:
             parser.read_string("".join(sections["Constants"]))
             for k, v in parser.items("Constants"):
                 m = self.VAR_REGEX.match(k)
-                local_constants[m.group(1) if m else k] = v or ""
+                var = m.group(1) if m else k
+                local_constants[var] = v or ""
+                if "persist" in k.lower() and var.startswith("$"):
+                    persistent_vars.add(var)
 
         # -------- iterate Key sections --------------------------------------
         for sec_name, lines in sections.items():
@@ -239,12 +283,20 @@ class IniKeyParsingService:
                     continue
                 seen_var.add(var)
                 opts = list(dict.fromkeys(o.strip() for o in v.split(",") if o.strip()))
+                persist_key = self._build_persist_key(
+                    file_path, var, game_root_path, file_namespace
+                )
+                is_persistent = var in persistent_vars
                 cur_val = local_constants.get(var, opts[0] if opts else "")
+                if is_persistent and persist_key:
+                    cur_val = runtime_persist_values.get(persist_key.lower(), cur_val)
                 assigns.append(
                     Assignment(
                         variable=var,
                         cycle_options=opts,
                         current_value=cur_val,
+                        is_persistent=is_persistent,
+                        persist_key=persist_key,
                     )
                 )
 
@@ -258,11 +310,42 @@ class IniKeyParsingService:
                     condition=data.get("condition"),
                     run=data.get("run"),
                     wrap=data.getboolean("wrap", fallback=True),
+                    namespace=file_namespace,
                     assignments=assigns,
                 )
             )
 
         return keybindings
+
+    def _get_user_config_path(self, game_root_path: Path | None) -> Path | None:
+        if not game_root_path:
+            return None
+        return game_root_path / "d3dx_user.ini"
+
+    def _build_persist_key(
+        self,
+        source_file: Path,
+        variable: str,
+        game_root_path: Path | None,
+        namespace: str | None = None,
+    ) -> str | None:
+        var_name = variable[1:] if variable.startswith("$") else variable
+        if namespace:
+            return normalize_persist_key(f"$\\{namespace}\\{var_name}")
+
+        if not game_root_path:
+            return None
+        try:
+            relative_path = source_file.relative_to(game_root_path)
+        except ValueError:
+            return None
+
+        normalized_parts = [
+            strip_disabled_prefix(part) for part in relative_path.parts
+        ]
+        return normalize_persist_key(
+            "$\\" + "\\".join([*normalized_parts, var_name])
+        )
 
     # ---------------------------------------------------------------------------
     #  Public API  ── parse semua .ini di folder  (thread-pool, depth ≤4)
@@ -399,7 +482,11 @@ class IniKeyParsingService:
                         f"Created backup for '{file_path.name}' at '{backup_path.name}'"
                     )
 
-                # 3. Read all lines from the original file
+                # 3. Persist current values back to [Constants] and XXMI user config.
+                self._update_persistent_constants(file_path, bindings)
+                self._update_user_persistent_values(file_path, bindings)
+
+                # 4. Read all lines from the original file
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     original_lines = f.readlines()
 
@@ -409,7 +496,7 @@ class IniKeyParsingService:
                 new_lines = []
                 in_section_to_replace = False
 
-                # 4. Atomically Read, Modify, and Write back the content
+                # 5. Atomically Read, Modify, and Write back the content
                 for line in original_lines:
                     stripped_line = line.strip()
 
@@ -437,7 +524,7 @@ class IniKeyParsingService:
                             new_lines.append(line)
                         # If we ARE inside a section to replace, do nothing (skip the old line)
 
-                # 5. Write the modified content back to the original file
+                # 6. Write the modified content back to the original file
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.writelines(new_lines)
 
@@ -451,3 +538,62 @@ class IniKeyParsingService:
                 errors.append(error_msg)
 
         return {"success": not errors, "errors": errors}
+
+    def _update_persistent_constants(
+        self, file_path: Path, bindings: list[KeyBinding]
+    ) -> None:
+        desired_values: dict[str, str] = {}
+        for binding in bindings:
+            for assignment in binding.assignments:
+                if assignment.is_persistent:
+                    desired_values[assignment.variable] = assignment.current_value
+
+        if not desired_values:
+            return
+
+        lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines(
+            keepends=True
+        )
+        persist_regex = re.compile(
+            r"^(\s*global\s+persist\s+)(\$\w+)(\s*=\s*)(.*?)(\r?\n?)$",
+            re.IGNORECASE,
+        )
+
+        changed = False
+        new_lines: list[str] = []
+        for line in lines:
+            match = persist_regex.match(line)
+            if not match:
+                new_lines.append(line)
+                continue
+
+            var = match.group(2)
+            if var in desired_values:
+                new_lines.append(
+                    f"{match.group(1)}{var}{match.group(3)}{desired_values[var]}{match.group(5)}"
+                )
+                changed = True
+            else:
+                new_lines.append(line)
+
+        if changed:
+            file_path.write_text("".join(new_lines), encoding="utf-8")
+
+    def _update_user_persistent_values(
+        self, file_path: Path, bindings: list[KeyBinding]
+    ) -> None:
+        desired_values: dict[str, str] = {}
+        for binding in bindings:
+            for assignment in binding.assignments:
+                if assignment.is_persistent and assignment.persist_key:
+                    desired_values[assignment.persist_key] = assignment.current_value
+
+        if not desired_values:
+            return
+
+        game_root = find_game_root_from_folder(file_path)
+        if not game_root:
+            return
+
+        user_config_path = game_root / "d3dx_user.ini"
+        write_user_persist_values(user_config_path, desired_values)

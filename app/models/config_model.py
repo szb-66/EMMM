@@ -37,3 +37,5 @@ class AppConfig:
     # --- UI Preferences ---
     window_geometry: tuple[int, int, int, int] | None = None
     splitter_sizes: tuple[int, int, int] | None = None
+    description_editor_height: int | None = None
+    object_list_view_mode: str = "list"

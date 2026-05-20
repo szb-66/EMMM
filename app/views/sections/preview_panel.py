@@ -1,12 +1,13 @@
 # app/views/sections/preview_panel.py
 from pathlib import Path
 from typing import List
-from PyQt6.QtCore import QEvent, QSignalBlocker, Qt
+from PyQt6.QtCore import QEvent, QSignalBlocker, Qt, pyqtSignal
 from collections import defaultdict
 from app.services.Iniparsing_service import KeyBinding
 from app.views.components.common.ini_file_group_widget import IniFileGroupWidget
 from app.views.components.common.keybinding_widget import KeyBindingWidget
 from PyQt6.QtWidgets import (
+    QFrame,
     QScrollArea,
     QWidget,
     QVBoxLayout,
@@ -41,6 +42,54 @@ from app.views.components.thumbnail_widget import ThumbnailSliderWidget
 
 # from app.views.components.keybinding_widget import KeyBindingWidget # To be created later
 PANEL_MARGIN = (12, 12, 12, 12)  # uniform inner padding
+DESCRIPTION_MIN_HEIGHT = 60
+DESCRIPTION_MAX_HEIGHT = 320
+
+
+class DescriptionResizeHandle(QFrame):
+    height_changed = pyqtSignal(int)
+    height_committed = pyqtSignal(int)
+
+    def __init__(self, target: QWidget, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.target = target
+        self._drag_start_y = 0
+        self._drag_start_height = 0
+
+        self.setFixedHeight(8)
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
+        self.setFrameShape(QFrame.Shape.HLine)
+        self.setFrameShadow(QFrame.Shadow.Sunken)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_y = int(event.globalPosition().y())
+            self._drag_start_height = self.target.height()
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            delta = int(event.globalPosition().y()) - self._drag_start_y
+            height = max(
+                DESCRIPTION_MIN_HEIGHT,
+                min(DESCRIPTION_MAX_HEIGHT, self._drag_start_height + delta),
+            )
+            self.height_changed.emit(height)
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.height_committed.emit(self.target.height())
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
 
 
 class PreviewPanel(QWidget):
@@ -110,9 +159,26 @@ class PreviewPanel(QWidget):
         vbox.addWidget(StrongBodyLabel("Description"))
         self.description_editor = TextEdit()
         self.description_editor.setPlaceholderText("No description available.")
-        self.description_editor.setMaximumHeight(80)
+        self.description_editor.setMinimumHeight(DESCRIPTION_MIN_HEIGHT)
+        self.description_editor.setMaximumHeight(DESCRIPTION_MAX_HEIGHT)
+        self.description_editor.setFixedHeight(
+            self.view_model.get_description_editor_height()
+        )
+        self.description_editor.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.description_editor.installEventFilter(self)
         vbox.addWidget(self.description_editor)
+        self.description_resize_handle = DescriptionResizeHandle(
+            self.description_editor, self
+        )
+        self.description_resize_handle.height_changed.connect(
+            self._set_description_editor_height
+        )
+        self.description_resize_handle.height_committed.connect(
+            self.view_model.save_description_editor_height
+        )
+        vbox.addWidget(self.description_resize_handle)
         self.save_description_button = PushButton(FluentIcon.SAVE, "Save Description")
         self.save_description_button.hide()
         vbox.addWidget(self.save_description_button, 0, Qt.AlignmentFlag.AlignLeft)
@@ -300,6 +366,10 @@ class PreviewPanel(QWidget):
     def _on_description_text_changed(self):
         """Memberitahu ViewModel setiap kali teks di editor berubah."""
         self.view_model.on_description_changed(self.description_editor.toPlainText())
+
+    def _set_description_editor_height(self, height: int):
+        height = max(DESCRIPTION_MIN_HEIGHT, min(DESCRIPTION_MAX_HEIGHT, height))
+        self.description_editor.setFixedHeight(height)
 
     def eventFilter(self, obj, event):
         if (

@@ -153,6 +153,7 @@ def main():
     )
     preview_panel_vm = PreviewPanelViewModel(
         mod_service=mod_service,
+        config_service=config_service,
         ini_parsing_service=ini_key_parsing_service,
         thumbnail_service=thumbnail_service,
         foldergrid_vm=foldergrid_vm,

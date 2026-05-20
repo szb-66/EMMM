@@ -40,6 +40,13 @@ from app.core.constants import (
     DISABLED_PREFIX_PATTERN,
     DEFAULT_DISABLED_PREFIX,
 )
+from app.services.persist_utils import (
+    find_game_root_from_folder,
+    normalize_persist_key,
+    read_user_persist_values,
+    strip_disabled_prefix,
+    write_user_persist_values,
+)
 from app.utils.logger_utils import logger
 
 # Import other services for dependency injection
@@ -364,6 +371,12 @@ class ModService:
                     else ModStatus.ENABLED
                 )
 
+            if isinstance(item, (FolderItem, ObjectItem)):
+                if new_status == ModStatus.DISABLED:
+                    self._snapshot_persistent_state(item)
+                elif new_status == ModStatus.ENABLED:
+                    self._restore_persistent_state_snapshot(item)
+
             # 2. Construct the new folder name
             prefix = DEFAULT_DISABLED_PREFIX if new_status == ModStatus.DISABLED else ""
             suffix = PIN_SUFFIX if item.is_pinned else ""
@@ -393,6 +406,82 @@ class ModService:
             error_msg = f"An unexpected error occurred during rename: {e}"
             logger.critical(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
+
+    def _snapshot_persistent_state(self, item: BaseModItem) -> None:
+        game_root = find_game_root_from_folder(item.folder_path)
+        if not game_root:
+            return
+
+        user_config_path = game_root / "d3dx_user.ini"
+        if not user_config_path.is_file():
+            return
+
+        # read_user_persist_values returns normalized keys
+        prefix = self._persistent_key_prefix_for_folder(item.folder_path, game_root)
+        snapshot: dict[str, str] = {}
+        for key, value in read_user_persist_values(user_config_path).items():
+            if key.startswith(prefix):
+                snapshot[key] = value
+
+        if not snapshot:
+            return
+
+        info_path = self._metadata_path_for_item(item)
+        info = self._read_json_or_empty(info_path)
+        info["persistent_state_snapshot"] = snapshot
+        self._write_json(info_path, info)
+        logger.info(
+            "Saved %d persistent state value(s) for '%s'.",
+            len(snapshot),
+            item.actual_name,
+        )
+
+    def _restore_persistent_state_snapshot(self, item: BaseModItem) -> None:
+        game_root = find_game_root_from_folder(item.folder_path)
+        if not game_root:
+            return
+
+        info = self._read_json_or_empty(self._metadata_path_for_item(item))
+        snapshot = info.get("persistent_state_snapshot")
+        if not isinstance(snapshot, dict) or not snapshot:
+            return
+
+        # Normalize keys for backward compatibility
+        normalized = {normalize_persist_key(k): str(v) for k, v in snapshot.items()}
+        user_config_path = game_root / "d3dx_user.ini"
+        write_user_persist_values(user_config_path, normalized)
+        logger.info(
+            "Restored %d persistent state value(s) for '%s'.",
+            len(normalized),
+            item.actual_name,
+        )
+
+    def _persistent_key_prefix_for_folder(self, folder_path: Path, game_root: Path) -> str:
+        try:
+            relative_path = folder_path.relative_to(game_root)
+        except ValueError:
+            return ""
+
+        normalized_parts = [
+            strip_disabled_prefix(part) for part in relative_path.parts
+        ]
+        return normalize_persist_key(
+            "$\\" + "\\".join(normalized_parts) + "\\"
+        )
+
+    def _read_json_or_empty(self, json_path: Path) -> dict:
+        if not json_path.is_file():
+            return {}
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _metadata_path_for_item(self, item: BaseModItem) -> Path:
+        filename = PROPERTIES_JSON_NAME if isinstance(item, ObjectItem) else INFO_JSON_NAME
+        return item.folder_path / filename
 
     def toggle_pin_status(self, item: BaseModItem) -> dict:
         """

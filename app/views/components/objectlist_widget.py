@@ -10,7 +10,6 @@ from qfluentwidgets import (
     IconWidget,
     CheckBox,
     IndeterminateProgressRing,
-    FlowLayout,
     VBoxLayout,
     AvatarWidget,
     RoundMenu,
@@ -37,11 +36,13 @@ class ObjectListItemWidget(QWidget):
         self,
         item_data: dict,
         viewmodel: ModListViewModel,
+        display_mode: str = "list",
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.item_data = item_data
         self.view_model = viewmodel
+        self.display_mode = display_mode
         self._is_hovering = False
 
         self._init_ui()
@@ -51,13 +52,16 @@ class ObjectListItemWidget(QWidget):
     def _init_ui(self):
         """Initializes the UI components of the widget with Fluent components."""
         self.setObjectName("ObjectListItem")
-        # ---Main Layout: Use Fluent Flowlayout ---
-
-        main_layout = QHBoxLayout(self)
-        # main_layout = FlowLayout(self)
-
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(10)
+        if self.display_mode == "card":
+            main_layout = VBoxLayout(self)
+            main_layout.setContentsMargins(6, 8, 6, 8)
+            main_layout.setSpacing(6)
+            main_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+            self.setMinimumHeight(136)
+        else:
+            main_layout = QHBoxLayout(self)
+            main_layout.setContentsMargins(8, 8, 8, 8)
+            main_layout.setSpacing(10)
 
         # ---1. Thumbnail as Avatar ---
 
@@ -84,20 +88,34 @@ class ObjectListItemWidget(QWidget):
         self.processing_ring.move(ring_x, ring_y)
         self.processing_ring.hide()
 
-        main_layout.addWidget(self.avatar)
+        if self.display_mode == "card":
+            main_layout.addWidget(self.avatar, 0, Qt.AlignmentFlag.AlignHCenter)
+        else:
+            main_layout.addWidget(self.avatar)
 
         # ---2. Info Block (Name + Passive Label Status) ---
 
         info_widget = QWidget(self)
         info_layout = VBoxLayout(info_widget)
-        info_layout.setContentsMargins(4, 0, 0, 0)
+        info_layout.setContentsMargins(0 if self.display_mode == "card" else 4, 0, 0, 0)
         info_layout.setSpacing(2)
-        info_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        info_layout.setAlignment(
+            Qt.AlignmentFlag.AlignTop | (
+                Qt.AlignmentFlag.AlignHCenter
+                if self.display_mode == "card"
+                else Qt.AlignmentFlag.AlignLeft
+            )
+        )
 
         self.name_label = StrongBodyLabel()
         self.name_label.setObjectName("NameLabel")
         self.name_label.setWordWrap(True)
-        self.name_label.setMaximumHeight(42)
+        self.name_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+            if self.display_mode == "card"
+            else Qt.AlignmentFlag.AlignLeft
+        )
+        self.name_label.setMaximumHeight(44 if self.display_mode == "card" else 42)
         info_layout.addWidget(self.name_label)
 
         self.status_text = CaptionLabel()
@@ -105,12 +123,11 @@ class ObjectListItemWidget(QWidget):
         info_layout.addWidget(self.status_text)
         main_layout.addWidget(info_widget)
 
-        # ---3. Spacer to push the icon pin to the right ---
-        # Revised: Use Qwidget with expanding policy as a spacer
-
-        spacer = QWidget(self)
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        main_layout.addWidget(spacer)
+        if self.display_mode == "list":
+            # ---3. Spacer to push the icon pin to the right ---
+            spacer = QWidget(self)
+            spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            main_layout.addWidget(spacer)
 
         # ---4. Pin Icon ---
 
@@ -118,7 +135,11 @@ class ObjectListItemWidget(QWidget):
         self.pin_icon.setFixedSize(16, 16)
         self.pin_icon.setToolTip("Pinned")
         self.pin_icon.hide()
-        main_layout.addWidget(self.pin_icon)
+        if self.display_mode == "card":
+            self.pin_icon.move(self.width() - 22, 6)
+            self.pin_icon.raise_()
+        else:
+            main_layout.addWidget(self.pin_icon)
 
     def _connect_signals(self):
         """Connects internal UI widget signals to their handler methods."""
@@ -137,6 +158,7 @@ class ObjectListItemWidget(QWidget):
 
         is_enabled = self.item_data.get("is_enabled")
         self.status_text.setText("Enabled" if is_enabled else "Disabled")
+        self.status_text.setVisible(self.display_mode == "list")
         self.pin_icon.setVisible(self.item_data.get("is_pinned", False))
 
         id_data = self.item_data.get("id") or ""
@@ -156,6 +178,11 @@ class ObjectListItemWidget(QWidget):
         self.avatar.setPixmap(thumbnail_pixmap)
         self.avatar.setRadius(34)
         self.avatar.setFixedSize(QSize(76, 76))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.display_mode == "card":
+            self.pin_icon.move(max(4, self.width() - 22), 6)
 
     def show_processing_state(self, is_processing: bool, text: str = "Processing..."):
         """Flow 3.1a, 4.2: Shows a visual indicator that the item is being processed."""
