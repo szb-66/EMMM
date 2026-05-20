@@ -1,8 +1,7 @@
 # app/views/sections/preview_panel.py
 from pathlib import Path
-from this import s
 from typing import List
-from PyQt6.QtCore import QSignalBlocker, Qt
+from PyQt6.QtCore import QEvent, QSignalBlocker, Qt
 from collections import defaultdict
 from app.services.Iniparsing_service import KeyBinding
 from app.views.components.common.ini_file_group_widget import IniFileGroupWidget
@@ -112,6 +111,7 @@ class PreviewPanel(QWidget):
         self.description_editor = TextEdit()
         self.description_editor.setPlaceholderText("No description available.")
         self.description_editor.setMaximumHeight(80)
+        self.description_editor.installEventFilter(self)
         vbox.addWidget(self.description_editor)
         self.save_description_button = PushButton(FluentIcon.SAVE, "Save Description")
         self.save_description_button.hide()
@@ -300,6 +300,16 @@ class PreviewPanel(QWidget):
     def _on_description_text_changed(self):
         """Memberitahu ViewModel setiap kali teks di editor berubah."""
         self.view_model.on_description_changed(self.description_editor.toPlainText())
+
+    def eventFilter(self, obj, event):
+        if (
+            obj is self.description_editor
+            and event.type() == QEvent.Type.FocusOut
+            and self.view_model.is_description_dirty
+        ):
+            self.view_model.save_description()
+
+        return super().eventFilter(obj, event)
 
     # ADD THIS SLOT
     def _on_save_description_state_changed(self, text: str, is_enabled: bool):

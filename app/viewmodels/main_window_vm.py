@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 import subprocess
-from PyQt6.QtCore import QObject, pyqtSignal, QThreadPool
+from PyQt6.QtCore import QObject, pyqtSignal, QThreadPool, QTimer
 from typing import Optional, List, Dict
 import subprocess as sp
 from app.utils.logger_utils import logger
@@ -15,6 +15,7 @@ from app.models.config_model import AppConfig
 from app.models.game_model import Game
 from app.models.mod_item_model import ObjectItem
 from app.services.config_service import ConfigService
+from app.services.file_watcher_service import FileWatcherService
 from app.services.workflow_service import WorkflowService
 from .mod_list_vm import ModListViewModel
 from .preview_panel_vm import PreviewPanelViewModel
@@ -75,6 +76,9 @@ class MainWindowViewModel(QObject):
         self.active_game: Optional[Game] = None
         self.active_object: Optional[ObjectItem] = None
         self._pending_foldergrid_path_to_refresh: Path | None = None
+        self._file_watcher = FileWatcherService()
+        self._watch_debounce_timers: dict[str, QTimer] = {}
+        self._file_watcher.directory_changed.connect(self._on_watched_directory_changed)
         self._connect_child_vm_signals()
 
     # ---Initialization ---
@@ -158,7 +162,18 @@ class MainWindowViewModel(QObject):
 
     def set_current_game(self, game: Optional[Game]):
         """Flow 2.1: Sets the active game, triggering objectlist load."""
-        if not game or (self.active_game and self.active_game.id == game.id):
+        if not game:
+            self.active_game = None
+            self.active_object = None
+            self._file_watcher.clear_watch("objectlist")
+            self._file_watcher.clear_watch("foldergrid")
+            self.objectlist_vm.unload_items()
+            self.foldergrid_vm.unload_items()
+            self.preview_panel_vm.clear_panel()
+            self.active_game_changed.emit(None)
+            return
+
+        if self.active_game and self.active_game.id == game.id:
             return  # Do nothing if the game is the same or invalid
 
         logger.info(f"Setting active game to: '{game.name}'")
@@ -173,10 +188,12 @@ class MainWindowViewModel(QObject):
 
         # Flow 2.1 Step 5: Trigger the next flow
         if self.active_game.path and self.active_game.path.is_dir():
+            self._file_watcher.watch_directory("objectlist", self.active_game.path)
             self.objectlist_vm.load_items(
                 path=self.active_game.path, game=self.active_game
             )
         else:
+            self._file_watcher.clear_watch("objectlist")
             logger.error(
                 f"Cannot load mods for '{self.active_game.name}', path is invalid or not set."
             )
@@ -239,6 +256,7 @@ class MainWindowViewModel(QObject):
         self.active_object = object_item
 
         if self.active_game and object_item.folder_path.is_dir():
+            self._file_watcher.watch_directory("foldergrid", object_item.folder_path)
             self.foldergrid_vm.load_items(
                 path=object_item.folder_path, game=self.active_game, is_new_root=True
             )
@@ -248,6 +266,7 @@ class MainWindowViewModel(QObject):
             logger.error(
                 f"Path for object '{object_item.actual_name}' is invalid: {object_item.folder_path}"
             )
+            self._file_watcher.clear_watch("foldergrid")
             self.foldergrid_vm.unload_items()
             self.toast_requested.emit(
                 f"Path for {object_item.actual_name} is invalid!", "error"
@@ -318,6 +337,10 @@ class MainWindowViewModel(QObject):
         self.foldergrid_vm.selection_invalidated.connect(
             self.preview_panel_vm.clear_panel
         )
+        self.objectlist_vm.selection_invalidated.connect(
+            self._on_active_object_invalidated
+        )
+        self.foldergrid_vm.path_changed.connect(self._on_foldergrid_path_changed)
 
     def _on_toast_requested(self, message: str, level: str = "info"):
         """
@@ -372,8 +395,22 @@ class MainWindowViewModel(QObject):
             self.active_object = None
 
             # 2. Instruct foldergrid and preview_panel to clear themselves
+            self._file_watcher.clear_watch("foldergrid")
             self.foldergrid_vm.unload_items()
             self.preview_panel_vm.clear_panel()
+
+    def _on_active_object_invalidated(self):
+        """Clears dependent views when the selected object no longer exists."""
+        if not self.active_object:
+            return
+
+        logger.info(
+            f"Active object '{self.active_object.actual_name}' no longer exists. Clearing dependent views."
+        )
+        self.active_object = None
+        self._file_watcher.clear_watch("foldergrid")
+        self.foldergrid_vm.unload_items()
+        self.preview_panel_vm.clear_panel()
 
     def _process_config_update(self):
         """
@@ -486,6 +523,30 @@ class MainWindowViewModel(QObject):
         if not success:
             return
 
+        if self.active_object:
+            refreshed_active_object = next(
+                (
+                    item
+                    for item in self.objectlist_vm.master_list
+                    if item.id == self.active_object.id
+                ),
+                None,
+            )
+            if not refreshed_active_object:
+                refreshed_active_object = next(
+                    (
+                        item
+                        for item in self.objectlist_vm.master_list
+                        if item.actual_name == self.active_object.actual_name
+                    ),
+                    None,
+                )
+            if refreshed_active_object:
+                self.active_object = refreshed_active_object
+            else:
+                self._on_active_object_invalidated()
+                return
+
         if not path_to_recover:
             # Nothing to recover, we are done.
             return
@@ -516,6 +577,14 @@ class MainWindowViewModel(QObject):
                 f"Could not restore path '{path_to_recover}', it's no longer valid. Clearing selection."
             )
             self.foldergrid_vm.set_active_selection(None)
+            if self.active_object and self.active_object.folder_path.is_dir():
+                self.foldergrid_vm.load_items(
+                    path=self.active_object.folder_path,
+                    game=self.active_game,
+                    is_new_root=True,
+                )
+            else:
+                self.foldergrid_vm.unload_items()
 
     def _on_foldergrid_selection_changed(self, selected_item_id: str | None):
         """
@@ -529,6 +598,62 @@ class MainWindowViewModel(QObject):
                 "Foldergrid selection cleared, commanding preview panel to clear."
             )
             self.preview_panel_vm.clear_panel()
+
+    def _on_foldergrid_path_changed(self, new_path: Path | None):
+        if new_path and new_path.is_dir():
+            self._file_watcher.watch_directory("foldergrid", new_path)
+        else:
+            self._file_watcher.clear_watch("foldergrid")
+
+    def _on_watched_directory_changed(self, key: str, changed_path: Path):
+        logger.debug(f"Detected filesystem change for {key}: {changed_path}")
+
+        timer = self._watch_debounce_timers.get(key)
+        if not timer:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda key=key: self._refresh_watched_context(key))
+            self._watch_debounce_timers[key] = timer
+
+        timer.start(400)
+
+    def _refresh_watched_context(self, key: str):
+        if key == "objectlist":
+            if self.active_game and self.active_game.path.is_dir():
+                logger.info("Refreshing object list after external filesystem change.")
+                self.request_main_refresh()
+            else:
+                self.objectlist_vm.unload_items()
+                self._on_active_object_invalidated()
+            return
+
+        if key == "foldergrid":
+            if not self.active_game:
+                return
+
+            current_path = self.foldergrid_vm.current_path
+            if current_path and current_path.is_dir():
+                logger.info("Refreshing folder grid after external filesystem change.")
+                self.foldergrid_vm.load_items(
+                    path=current_path,
+                    game=self.active_game,
+                    is_new_root=(current_path == self.foldergrid_vm.navigation_root),
+                )
+            elif self.active_object and self.active_object.folder_path.is_dir():
+                logger.info("Folder grid path is invalid. Falling back to active object root.")
+                self.foldergrid_vm.load_items(
+                    path=self.active_object.folder_path,
+                    game=self.active_game,
+                    is_new_root=True,
+                )
+            else:
+                logger.info("Folder grid path and active object are invalid. Clearing dependent views.")
+                self._on_active_object_invalidated()
+
+    def shutdown(self):
+        for timer in self._watch_debounce_timers.values():
+            timer.stop()
+        self._file_watcher.stop()
 
     def on_category_selected(self, category_key: str):
         """

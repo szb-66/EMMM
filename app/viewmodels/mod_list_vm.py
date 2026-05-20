@@ -43,7 +43,7 @@ class ModListViewModel(QObject):
     toast_requested = pyqtSignal(
         str, str
     )  # message, level ('info', 'error', 'success')
-    active_selection_changed = pyqtSignal(str)
+    active_selection_changed = pyqtSignal(object)
     selection_invalidated = pyqtSignal()
     empty_state_changed = pyqtSignal(str, str)
     filter_state_changed = pyqtSignal(bool, int)
@@ -103,6 +103,7 @@ class ModListViewModel(QObject):
         self.navigation_root: Path | None = None
         self._processing_ids = set()
         self.last_selected_item_id: str | None = None
+        self.last_selected_item_name: str | None = None
         self.active_category_filter: ModType = ModType.CHARACTER
         self._item_to_select_after_load: str | None = None
         self._active_workers = []
@@ -797,10 +798,27 @@ class ModListViewModel(QObject):
         # if no new item to select, check if there is a previously selected item to restore
         elif self.last_selected_item_id:
             item = next((i for i in self.master_list if i.id == self.last_selected_item_id), None)
+            if not item and self.last_selected_item_name:
+                item = next(
+                    (
+                        i
+                        for i in self.master_list
+                        if i.actual_name == self.last_selected_item_name
+                    ),
+                    None,
+                )
             if item:
                 logger.info(f"Identified previously selected item to restore: '{item.actual_name}'")
                 item_id_to_select = item.id
+                self.last_selected_item_id = item.id
+                self.last_selected_item_name = item.actual_name
             else:
+                logger.warning(
+                    f"Previously selected item '{self.last_selected_item_id}' not found after refresh. Invalidating selection."
+                )
+                self.last_selected_item_id = None
+                self.last_selected_item_name = None
+                self.active_selection_changed.emit(None)
                 self.selection_invalidated.emit()
         # -----------------------------------------------------------------
 
@@ -820,8 +838,19 @@ class ModListViewModel(QObject):
                 ),
                 None,
             )
+            if not found_item and self.last_selected_item_name:
+                found_item = next(
+                    (
+                        item
+                        for item in self.master_list
+                        if item.actual_name == self.last_selected_item_name
+                    ),
+                    None,
+                )
 
             if found_item:
+                self.last_selected_item_id = found_item.id
+                self.last_selected_item_name = found_item.actual_name
                 # If it exists, re-emit the signal to apply the selection style in the UI.
                 logger.info(
                     f"Restoring selection for item ID: {self.last_selected_item_id}"
@@ -834,8 +863,10 @@ class ModListViewModel(QObject):
                 )
                 # 1. Reset the state
                 self.last_selected_item_id = None
+                self.last_selected_item_name = None
 
                 # 2. Emit the new, specific signal for this event
+                self.active_selection_changed.emit(None)
                 self.selection_invalidated.emit()
 
     def set_active_selection(self, item_id: str | None):
@@ -845,6 +876,10 @@ class ModListViewModel(QObject):
         """
         if self.last_selected_item_id != item_id:
             self.last_selected_item_id = item_id
+            selected_item = next((i for i in self.master_list if i.id == item_id), None)
+            self.last_selected_item_name = (
+                selected_item.actual_name if selected_item else None
+            )
             logger.debug(
                 f"Active selection changed in context '{self.context}': {item_id}"
             )

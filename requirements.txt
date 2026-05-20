@@ -7,7 +7,7 @@ PyQt6==6.9.0
 PyQt6-Qt6==6.9.0
 
 # UI Theming & Fluent Widgets
-pyqt-fluent-widgets>=1.7.0
+PyQt6-Fluent-Widgets>=1.7.0
 
 # Filesystem Monitoring
 watchdog==6.0.0

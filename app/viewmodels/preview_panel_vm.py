@@ -392,21 +392,62 @@ class PreviewPanelViewModel(QObject):
             f"Keybinding edited: id={binding_id}, type={field_type}, identifier={field_identifier}, value='{new_value}'"
         )
 
+        binding = next(
+            (kb for kb in self.editable_keybindings if kb.binding_id == binding_id),
+            None,
+        )
+        if binding is None:
+            logger.warning(
+                f"Ignoring edit for unknown keybinding id={binding_id}, type={field_type}"
+            )
+            return
+
         # Use Setdefault to make a sub-time if not yet. This is safer.
         changes_for_binding = self._unsaved_ini_changes.setdefault(binding_id, {})
 
         # Keep changes based on the type of field
         if field_type in ["key", "back"]:
+            values = binding.keys if field_type == "key" else binding.backs
+            if not isinstance(field_identifier, int) or not (
+                0 <= field_identifier < len(values)
+            ):
+                logger.warning(
+                    f"Ignoring {field_type} edit with invalid index={field_identifier} "
+                    f"for keybinding id={binding_id}"
+                )
+                return
+
+            values[field_identifier] = new_value
+
             # 'keys' and 'backs' stored in their own sub-dam
             key_or_back_changes = changes_for_binding.setdefault(field_type, {})
             # Field identifier here is an index (int)
             key_or_back_changes[field_identifier] = new_value
 
         elif field_type == "assignment":
+            assignment = next(
+                (a for a in binding.assignments if a.variable == field_identifier),
+                None,
+            )
+            if assignment is None:
+                logger.warning(
+                    f"Ignoring assignment edit for unknown variable={field_identifier} "
+                    f"on keybinding id={binding_id}"
+                )
+                return
+
+            assignment.current_value = new_value
+
             # 'Assignments' is kept in its own sub-fiery
             assignment_changes = changes_for_binding.setdefault("assignments", {})
             # Field_Identifier here is the name of the variable (STR)
             assignment_changes[field_identifier] = new_value
+        else:
+            logger.warning(
+                f"Ignoring edit with unsupported field type={field_type} "
+                f"for keybinding id={binding_id}"
+            )
+            return
 
         # Tell UI that there is a change in configuration. This has not been saved
         if not self.is_ini_dirty:

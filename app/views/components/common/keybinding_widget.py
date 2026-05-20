@@ -75,7 +75,9 @@ class KeyBindingWidget(QWidget):
 
         # ── assignments ───────────────────────────────────────────────────────────
         for a in self.binding_data.assignments:
-            root.addLayout(self._create_row(a.variable, self._create_smart_input(a)))
+            field = self._create_smart_input(a)
+            self.assignment_widgets[a.variable] = field
+            root.addLayout(self._create_row(a.variable, field))
 
         # ── triggers (keys / backs) ───────────────────────────────────────────────
         if self.binding_data.keys or self.binding_data.backs:
@@ -83,10 +85,14 @@ class KeyBindingWidget(QWidget):
                 root.addWidget(self._hline())
 
             for i, val in enumerate(self.binding_data.keys, 1):
-                root.addLayout(self._create_row(f"Key", self._line_edit(val)))
+                edit = self._line_edit(val)
+                self.key_edits.append(edit)
+                root.addLayout(self._create_row(f"Key", edit))
 
             for i, val in enumerate(self.binding_data.backs, 1):
-                root.addLayout(self._create_row(f"Back", self._line_edit(val)))
+                edit = self._line_edit(val)
+                self.back_edits.append(edit)
+                root.addLayout(self._create_row(f"Back", edit))
 
         self.setLayout(root)
 

@@ -527,5 +527,6 @@ class MainWindow(FluentWindow):
         self._on_settings_dialog_requested(initial_tab="launcher_tab")
 
     def closeEvent(self, event):
+        self.main_window_vm.shutdown()
         super().closeEvent(event)
         pass
