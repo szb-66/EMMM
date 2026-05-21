@@ -47,6 +47,7 @@ from app.services.persist_utils import (
     strip_disabled_prefix,
     write_user_persist_values,
 )
+from app.services.Iniparsing_service import IniKeyParsingService
 from app.utils.logger_utils import logger
 
 # Import other services for dependency injection
@@ -68,6 +69,7 @@ class ModService:
         self.database_service = database_service
         self.image_utils = image_utils
         self.system_utils = system_utils
+        self.ini_parsing_service = IniKeyParsingService()
         self._app_path = app_path
 
     # --- Loading & Hydration ---
@@ -373,7 +375,18 @@ class ModService:
 
             if isinstance(item, (FolderItem, ObjectItem)):
                 if new_status == ModStatus.DISABLED:
-                    self._snapshot_persistent_state(item)
+                    sync_result = self._sync_runtime_persistent_state_to_source(item)
+                    if not sync_result.get("success"):
+                        return {
+                            "success": False,
+                            "error": sync_result.get(
+                                "error",
+                                "Failed to synchronize runtime persist state.",
+                            ),
+                        }
+                    self._snapshot_persistent_state(
+                        item, sync_result.get("snapshot")
+                    )
                 elif new_status == ModStatus.ENABLED:
                     self._restore_persistent_state_snapshot(item)
 
@@ -407,7 +420,22 @@ class ModService:
             logger.critical(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
 
-    def _snapshot_persistent_state(self, item: BaseModItem) -> None:
+    def _sync_runtime_persistent_state_to_source(self, item: BaseModItem) -> dict:
+        game_root = find_game_root_from_folder(item.folder_path)
+        if not game_root:
+            return {"success": True, "snapshot": {}, "updated_files": []}
+
+        user_config_path = game_root / "d3dx_user.ini"
+        if not user_config_path.is_file():
+            return {"success": True, "snapshot": {}, "updated_files": []}
+
+        return self.ini_parsing_service.sync_runtime_persist_to_source(
+            item.folder_path, game_root
+        )
+
+    def _snapshot_persistent_state(
+        self, item: BaseModItem, runtime_snapshot: dict[str, str] | None = None
+    ) -> None:
         game_root = find_game_root_from_folder(item.folder_path)
         if not game_root:
             return
@@ -416,9 +444,17 @@ class ModService:
         if not user_config_path.is_file():
             return
 
+        snapshot: dict[str, str] = {}
+        if runtime_snapshot:
+            snapshot.update(
+                {
+                    normalize_persist_key(k): str(v)
+                    for k, v in runtime_snapshot.items()
+                }
+            )
+
         # read_user_persist_values returns normalized keys
         prefix = self._persistent_key_prefix_for_folder(item.folder_path, game_root)
-        snapshot: dict[str, str] = {}
         for key, value in read_user_persist_values(user_config_path).items():
             if key.startswith(prefix):
                 snapshot[key] = value

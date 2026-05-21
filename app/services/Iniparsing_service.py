@@ -59,6 +59,16 @@ class KeyBinding:
     assignments: List[Assignment] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class RuntimePersistAssignment:
+    """Runtime value for one persistent assignment owned by a source .ini file."""
+
+    source_file: Path
+    variable: str
+    current_value: str
+    persist_key: str
+
+
 class IniKeyParsingService:
     """
     Parses, modifies, and writes 3DMigoto .ini files, specifically for keybindings.
@@ -178,6 +188,7 @@ class IniKeyParsingService:
         file_path: Path,
         game_root_path: Path | None = None,
         runtime_persist_values: dict[str, str] | None = None,
+        folder_persistent_vars: dict[str, str] | None = None,
     ) -> list[KeyBinding]:
         """
         Baca file sekali → hasilkan list KeyBinding.
@@ -245,6 +256,13 @@ class IniKeyParsingService:
                 local_constants[var] = v or ""
                 if "persist" in k.lower() and var.startswith("$"):
                     persistent_vars.add(var)
+
+        # -------- merge folder-wide persistent vars (cross-file support) ----
+        if folder_persistent_vars:
+            for var, default in folder_persistent_vars.items():
+                persistent_vars.add(var)
+                if var not in local_constants:
+                    local_constants[var] = default
 
         # -------- iterate Key sections --------------------------------------
         for sec_name, lines in sections.items():
@@ -378,6 +396,187 @@ class IniKeyParsingService:
             "Parsed %d keybindings from %d ini files", len(all_bindings), len(ini_files)
         )
         return {"success": True, "data": all_bindings}
+
+    def get_runtime_persistent_assignments(
+        self, folder_path: Path, game_root_path: Path | None = None
+    ) -> list[RuntimePersistAssignment]:
+        """Return persistent assignments whose current value exists in d3dx_user.ini.
+
+        Three-phase resolution:
+          1. Pre-scan all ``.ini`` files for folder-wide ``global persist`` decls.
+          2. Parse each file with the shared var set so cross-file references work.
+          3. Synthesize entries for orphan persist vars (declared but never in a
+             ``[Key]`` section) using their declaration default as fallback.
+        """
+        game_root = game_root_path or find_game_root_from_folder(folder_path)
+        if not game_root:
+            return []
+
+        user_config_path = self._get_user_config_path(game_root)
+        runtime_values = read_user_persist_values(user_config_path)
+        if not runtime_values:
+            return []
+
+        # Phase 1 — folder-wide pre-scan
+        folder_defaults, folder_sources, folder_ns = (
+            self._collect_folder_persistent_vars(folder_path)
+        )
+
+        # Phase 2 — parse with shared persistent_vars
+        assignments: list[RuntimePersistAssignment] = []
+        matched_vars: set[str] = set()
+        for ini_path in self._get_ini_files(folder_path):
+            for binding in self._parse_single_ini(
+                ini_path, game_root, runtime_values, folder_defaults
+            ):
+                for assignment in binding.assignments:
+                    if not assignment.is_persistent or not assignment.persist_key:
+                        continue
+                    matched_vars.add(assignment.variable)
+                    normalized_key = normalize_persist_key(assignment.persist_key)
+                    if normalized_key not in runtime_values:
+                        continue
+                    assignments.append(
+                        RuntimePersistAssignment(
+                            source_file=ini_path,
+                            variable=assignment.variable,
+                            current_value=runtime_values[normalized_key],
+                            persist_key=normalized_key,
+                        )
+                    )
+
+        # Phase 3 — orphan persist vars (declared but not in any [Key] section)
+        for var, default in folder_defaults.items():
+            if var in matched_vars:
+                continue
+            source_file = folder_sources.get(var)
+            if not source_file:
+                continue
+            namespace = folder_ns.get(source_file)
+            persist_key = self._build_persist_key(
+                source_file, var, game_root, namespace
+            )
+            if not persist_key:
+                continue
+            normalized_key = normalize_persist_key(persist_key)
+            current_value = runtime_values.get(normalized_key, default)
+            if normalized_key not in runtime_values:
+                continue
+            assignments.append(
+                RuntimePersistAssignment(
+                    source_file=source_file,
+                    variable=var,
+                    current_value=current_value,
+                    persist_key=normalized_key,
+                )
+            )
+
+        return assignments
+
+    def sync_runtime_persist_to_source(
+        self, folder_path: Path, game_root_path: Path | None = None
+    ) -> dict:
+        """
+        Copy current runtime persist values from d3dx_user.ini into source .ini
+        global persist defaults for the mod folder.
+        """
+        try:
+            runtime_assignments = self.get_runtime_persistent_assignments(
+                folder_path, game_root_path
+            )
+            if not runtime_assignments:
+                return {"success": True, "snapshot": {}, "updated_files": []}
+
+            values_by_file: dict[Path, dict[str, str]] = defaultdict(dict)
+            snapshot: dict[str, str] = {}
+            for assignment in runtime_assignments:
+                values_by_file[assignment.source_file][
+                    assignment.variable
+                ] = assignment.current_value
+                snapshot[assignment.persist_key] = assignment.current_value
+
+            updated_files: list[Path] = []
+            for file_path, desired_values in values_by_file.items():
+                backup_path = file_path.with_suffix(file_path.suffix + ".backup")
+                if not backup_path.exists():
+                    shutil.copy2(file_path, backup_path)
+                    logger.info(
+                        f"Created backup for '{file_path.name}' at '{backup_path.name}'"
+                    )
+                if self._update_persistent_constants_from_values(
+                    file_path, desired_values
+                ):
+                    updated_files.append(file_path)
+
+            return {
+                "success": True,
+                "snapshot": snapshot,
+                "updated_files": updated_files,
+            }
+        except Exception as e:
+            error_msg = f"Failed to synchronize runtime persist state: {e}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    def _collect_folder_persistent_vars(
+        self, folder_path: Path
+    ) -> tuple[dict[str, str], dict[str, Path], dict[Path, str | None]]:
+        """Scan all .ini files in *folder_path* for ``global persist`` declarations.
+
+        Returns a 3-tuple:
+          var_defaults   — variable name → declared default value
+          var_sources    — variable name → source file path
+          file_namespaces — source file path → namespace (or ``None``)
+        """
+        var_defaults: dict[str, str] = {}
+        var_sources: dict[str, Path] = {}
+        file_namespaces: dict[Path, str | None] = {}
+
+        persist_line = re.compile(
+            r"\s*global\s+persist\s+(\$\w+)\s*=\s*(.*)", re.IGNORECASE
+        )
+        namespace_line = re.compile(r"\s*namespace\s*=\s*(.+)", re.IGNORECASE)
+
+        for ini_path in self._get_ini_files(folder_path):
+            file_ns: str | None = None
+            in_constants = False
+
+            try:
+                raw_text = ini_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            for line in raw_text.splitlines(keepends=True):
+                stripped = line.strip()
+
+                # section boundary
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    sec_name = stripped[1:-1]
+                    if in_constants:
+                        in_constants = False
+                    if sec_name.lower() == "constants":
+                        in_constants = True
+                    continue
+
+                # file-level: namespace
+                if not in_constants:
+                    nm = namespace_line.match(stripped)
+                    if nm:
+                        file_ns = nm.group(1).strip()
+                        continue
+
+                # global persist (file-level or inside [Constants])
+                pm = persist_line.match(stripped)
+                if pm:
+                    var = pm.group(1)
+                    default = pm.group(2).strip()
+                    if var not in var_defaults:
+                        var_defaults[var] = default
+                        var_sources[var] = ini_path
+
+            file_namespaces[ini_path] = file_ns
+
+        return var_defaults, var_sources, file_namespaces
 
     def _get_configured_parser(self) -> configparser.ConfigParser:
         """Helper to create a pre-configured parser for 3DMigoto .ini files."""
@@ -541,15 +740,20 @@ class IniKeyParsingService:
 
     def _update_persistent_constants(
         self, file_path: Path, bindings: list[KeyBinding]
-    ) -> None:
+    ) -> bool:
         desired_values: dict[str, str] = {}
         for binding in bindings:
             for assignment in binding.assignments:
                 if assignment.is_persistent:
                     desired_values[assignment.variable] = assignment.current_value
 
+        return self._update_persistent_constants_from_values(file_path, desired_values)
+
+    def _update_persistent_constants_from_values(
+        self, file_path: Path, desired_values: dict[str, str]
+    ) -> bool:
         if not desired_values:
-            return
+            return False
 
         lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines(
             keepends=True
@@ -578,6 +782,7 @@ class IniKeyParsingService:
 
         if changed:
             file_path.write_text("".join(new_lines), encoding="utf-8")
+        return changed
 
     def _update_user_persistent_values(
         self, file_path: Path, bindings: list[KeyBinding]
