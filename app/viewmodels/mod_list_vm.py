@@ -65,6 +65,7 @@ class ModListViewModel(QObject):
     active_object_modified = pyqtSignal(object)
     active_object_deleted = pyqtSignal(str)
     foldergrid_item_modified = pyqtSignal(object)
+    watched_refresh_suppression_requested = pyqtSignal(str)
     load_completed = pyqtSignal(bool)
     sync_confirmation_requested = pyqtSignal(list)
     game_type_setup_required = pyqtSignal(str)
@@ -299,6 +300,7 @@ class ModListViewModel(QObject):
         # 1. Mark the item as being processed & tell UI
 
         self._processing_ids.add(item_id)
+        self.watched_refresh_suppression_requested.emit(self.context)
         self.item_processing_started.emit(item_id)
 
         # 2. Create and run a worker in the background thread
@@ -334,6 +336,7 @@ class ModListViewModel(QObject):
 
         logger.info(f"Request to toggle pin for '{item_to_pin.actual_name}'.")
         self._processing_ids.add(item_id)
+        self.watched_refresh_suppression_requested.emit(self.context)
         self.item_processing_started.emit(item_id)
 
         worker = Worker(self.mod_service.toggle_pin_status, item_to_pin)
@@ -386,6 +389,7 @@ class ModListViewModel(QObject):
 
         logger.info(f"Request to rename '{item_to_rename.actual_name}' to '{new_name}'.")
         self._processing_ids.add(item_id)
+        self.watched_refresh_suppression_requested.emit(self.context)
         self.item_processing_started.emit(item_id)
 
         worker = Worker(self.mod_service.rename_item, item_to_rename, new_name)
@@ -450,6 +454,7 @@ class ModListViewModel(QObject):
 
         logger.info(f"Request to delete '{item_to_delete.actual_name}'. Starting worker.")
         self._processing_ids.add(item_id)
+        self.watched_refresh_suppression_requested.emit(self.context)
         self.item_processing_started.emit(item_id)
 
         worker = Worker(self.mod_service.delete_item, item_to_delete)

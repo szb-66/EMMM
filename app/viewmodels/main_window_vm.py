@@ -78,6 +78,7 @@ class MainWindowViewModel(QObject):
         self._pending_foldergrid_path_to_refresh: Path | None = None
         self._file_watcher = FileWatcherService()
         self._watch_debounce_timers: dict[str, QTimer] = {}
+        self._watch_suppression_tokens: dict[str, int] = {}
         self._file_watcher.directory_changed.connect(self._on_watched_directory_changed)
         self._connect_child_vm_signals()
 
@@ -310,6 +311,12 @@ class MainWindowViewModel(QObject):
         self.objectlist_vm.object_created.connect(self._on_object_created)
         self.objectlist_vm.list_refresh_requested.connect(self._on_list_refresh_requested)
         self.foldergrid_vm.list_refresh_requested.connect(self._on_list_refresh_requested)
+        self.objectlist_vm.watched_refresh_suppression_requested.connect(
+            self._suppress_watched_refresh
+        )
+        self.foldergrid_vm.watched_refresh_suppression_requested.connect(
+            self._suppress_watched_refresh
+        )
         self.objectlist_vm.reconciliation_progress_updated.connect(self.bulk_progress_updated)
         # Flow 3.1a & 4.2.A: An active object was modified/renamed
         self.objectlist_vm.active_object_modified.connect(
@@ -362,6 +369,8 @@ class MainWindowViewModel(QObject):
         """
         Handles the domino effect when an active object is modified (e.g., toggled).
         """
+        self._suppress_watched_refresh("objectlist")
+
         # Check whether the item that changes is the item that we are actively seeing.
 
         if self.active_object and self.active_object.id == new_object_item.id:
@@ -494,6 +503,8 @@ class MainWindowViewModel(QObject):
         Flow 3.1b Domino Effect: Checks if the modified item from the grid
         is the one currently active in the PreviewPanel.
         """
+        self._suppress_watched_refresh("foldergrid")
+
         # Check if the preview panel is displaying something and if the IDs match
         if (
             self.preview_panel_vm.current_item_model
@@ -608,6 +619,10 @@ class MainWindowViewModel(QObject):
     def _on_watched_directory_changed(self, key: str, changed_path: Path):
         logger.debug(f"Detected filesystem change for {key}: {changed_path}")
 
+        if self._watch_suppression_tokens.get(key, 0):
+            logger.debug(f"Ignoring internal filesystem change for {key}: {changed_path}")
+            return
+
         timer = self._watch_debounce_timers.get(key)
         if not timer:
             timer = QTimer(self)
@@ -617,7 +632,46 @@ class MainWindowViewModel(QObject):
 
         timer.start(400)
 
+    def _suppress_watched_refresh(self, key: str, duration_ms: int = 5000):
+        """
+        Temporarily ignores watcher refreshes caused by internal file operations.
+        Single-item updates already patch the relevant widgets directly, so the
+        follow-up watchdog event would only rebuild the list and cause flicker.
+        """
+        keys_to_suppress = [key]
+        if key == "foldergrid":
+            # Renaming a child folder also raises a change for the watched
+            # objectlist directory on Windows, which otherwise reloads both panes.
+            keys_to_suppress.append("objectlist")
+        elif key == "objectlist":
+            keys_to_suppress.append("foldergrid")
+
+        for suppress_key in dict.fromkeys(keys_to_suppress):
+            self._suppress_single_watched_refresh(suppress_key, duration_ms)
+
+    def _suppress_single_watched_refresh(self, key: str, duration_ms: int):
+        timer = self._watch_debounce_timers.get(key)
+        if timer:
+            timer.stop()
+
+        self._file_watcher.suppress_watch(key, duration_ms)
+
+        token = self._watch_suppression_tokens.get(key, 0) + 1
+        self._watch_suppression_tokens[key] = token
+        logger.debug(f"Suppressing watched refresh for {key}.")
+
+        def clear_suppression():
+            if self._watch_suppression_tokens.get(key) == token:
+                self._watch_suppression_tokens.pop(key, None)
+                logger.debug(f"Watched refresh suppression cleared for {key}.")
+
+        QTimer.singleShot(duration_ms, clear_suppression)
+
     def _refresh_watched_context(self, key: str):
+        if self._watch_suppression_tokens.get(key, 0):
+            logger.debug(f"Skipping suppressed watched refresh for {key}.")
+            return
+
         if key == "objectlist":
             if self.active_game and self.active_game.path.is_dir():
                 logger.info("Refreshing object list after external filesystem change.")

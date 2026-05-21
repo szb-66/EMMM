@@ -13,7 +13,6 @@ from qfluentwidgets import (
     RoundMenu,
     SwitchButton,
     FlowLayout,
-    CheckBox,
     VBoxLayout,
     themeColor,
 )
@@ -34,7 +33,6 @@ class FolderGridItemWidget(CardWidget):
     item_selected = pyqtSignal(object)  # Emits the item model
     doubleClicked = pyqtSignal()  # Emits when the item is double-clicked
     status_toggled = pyqtSignal(bool)  # Emits the item model when status is toggled
-    bulk_selection_changed = pyqtSignal(bool)
     paste_requested = pyqtSignal()
 
     def __init__(
@@ -91,10 +89,6 @@ class FolderGridItemWidget(CardWidget):
         ring_y = (self._thumb_size.height() - self.processing_ring.height()) // 2
         self.processing_ring.move(ring_x, ring_y)
         self.processing_ring.hide()
-
-        self.selection_checkbox = CheckBox(image_container)
-        self.selection_checkbox.move(8, 8)
-        self.selection_checkbox.hide()
 
         self.pin_icon = IconWidget(FluentIcon.PIN, self)
         self.pin_icon.setFixedSize(24, 24)
@@ -379,9 +373,3 @@ class FolderGridItemWidget(CardWidget):
             # If the user confirms, call the ViewModel method
             self.view_model.delete_item(item_id)
 
-    def _on_selection_changed(self):
-        """Flow 3.2: Forwards the selection change to the ViewModel."""
-        # self.view_model.set_item_item_selected(
-        #    self.item.id, self.selection_checkbox.isChecked()
-        # )
-        pass

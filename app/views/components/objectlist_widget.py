@@ -8,7 +8,6 @@ from qfluentwidgets import (
     CaptionLabel,
     FluentIcon,
     IconWidget,
-    CheckBox,
     IndeterminateProgressRing,
     VBoxLayout,
     AvatarWidget,
@@ -43,7 +42,6 @@ class ObjectListItemWidget(QWidget):
         self.item_data = item_data
         self.view_model = viewmodel
         self.display_mode = display_mode
-        self._is_hovering = False
 
         self._init_ui()
         self._connect_signals()
@@ -68,16 +66,6 @@ class ObjectListItemWidget(QWidget):
         self.avatar = AvatarWidget(self)
         self.avatar.setRadius(34)
         self.avatar.setFixedSize(QSize(76, 76))
-
-        # Checkbox is made as a child of Avatar for overlay
-
-        self.selection_checkbox = CheckBox(self.avatar)
-        self.selection_checkbox.setFixedSize(20, 20)
-        self.selection_checkbox.move(
-            2, 2
-        )  # Position in the upper left corner of Avatar
-
-        self.selection_checkbox.hide()  # Hide by default
 
         # Added Processing Ring as Overlay in Avatar
 
@@ -143,11 +131,6 @@ class ObjectListItemWidget(QWidget):
 
     def _connect_signals(self):
         """Connects internal UI widget signals to their handler methods."""
-        # Connect user actions to methods that will call the ViewModel.
-        # self.status_switch.toggled.connect(self._on_status_toggled)
-
-        self.selection_checkbox.stateChanged.connect(self._on_selection_changed)
-        self.selection_checkbox.stateChanged.connect(self._update_checkbox_visibility)
         pass
 
     def set_data(self, item_data: dict):
@@ -294,41 +277,6 @@ class ObjectListItemWidget(QWidget):
             self.view_model.request_item_hydration(item_id)
 
     # ---Private Slots (Handling UI events) ---
-
-    def _on_status_toggled(self):
-        """Flow 3.1a: Forwards the status toggle action to the ViewModel."""
-        self.view_model.toggle_item_status(self.item_data.get("id") or "")
-        pass
-
-    def _on_selection_changed(self):
-        """Flow 3.2: Forwards the selection change to the ViewModel."""
-        self.view_model.set_item_selected(
-            self.item_data.get("id") or "", self.selection_checkbox.isChecked()
-        )
-
-    # ---Event Handlers for Hover Logic ---
-
-    def enterEvent(self, event):
-        """Called when the mouse cursor entered the widget area."""
-        super().enterEvent(event)
-        self._is_hovering = True
-        self._update_checkbox_visibility()
-
-    def leaveEvent(self, event):
-        """Called when the mouse cursor left the widget area."""
-        super().leaveEvent(event)
-        self._is_hovering = False
-        self._update_checkbox_visibility()
-
-    def _update_checkbox_visibility(self):
-        """
-        The main logic to display/hide the checkbox.
-        Checkbox will appear if hovers or if it has been checked.
-        """
-        if self._is_hovering or self.selection_checkbox.isChecked():
-            self.selection_checkbox.show()
-        else:
-            self.selection_checkbox.hide()
 
 
     def _on_edit_requested(self):

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -16,6 +16,9 @@ class _DirectoryEventHandler(FileSystemEventHandler):
     def on_any_event(self, event: FileSystemEvent):
         if event.event_type in {"opened", "closed"}:
             return
+        if self._owner.is_suppressed(self._key):
+            logger.debug(f"Ignoring suppressed filesystem event for {self._key}: {event.src_path}")
+            return
         self._owner.notify_changed(self._key, event.src_path)
 
 
@@ -30,6 +33,7 @@ class FileWatcherService(QObject):
         self._observer.start()
         self._watches = {}
         self._paths = {}
+        self._suppression_tokens = {}
 
     def watch_directory(self, key: str, path: Path | None):
         normalized_path = path.resolve() if path and path.is_dir() else None
@@ -67,6 +71,19 @@ class FileWatcherService(QObject):
 
     def notify_changed(self, key: str, changed_path: str):
         self.directory_changed.emit(key, Path(changed_path))
+
+    def is_suppressed(self, key: str) -> bool:
+        return bool(self._suppression_tokens.get(key, 0))
+
+    def suppress_watch(self, key: str, duration_ms: int = 5000):
+        token = self._suppression_tokens.get(key, 0) + 1
+        self._suppression_tokens[key] = token
+
+        def clear_suppression():
+            if self._suppression_tokens.get(key) == token:
+                self._suppression_tokens.pop(key, None)
+
+        QTimer.singleShot(duration_ms, clear_suppression)
 
     def stop(self):
         for key in list(self._watches):
