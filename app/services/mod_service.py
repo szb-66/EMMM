@@ -807,7 +807,15 @@ class ModService:
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
 
-        # 3. If all deletions were successful, update the metadata with the new list.
+        # 3. Check for fallback (permanent) deletion warnings after all deletions
+        fallback_warnings = SystemUtils.pop_fallback_warnings()
+        if fallback_warnings:
+            logger.warning(
+                "%d image(s) were permanently deleted (recycle bin unavailable): %s",
+                len(fallback_warnings), fallback_warnings,
+            )
+
+        # 4. If all deletions were successful, update the metadata with the new list.
         logger.info(
             f"Successfully deleted {len(successfully_deleted_paths)} image(s). Updating metadata."
         )
@@ -815,9 +823,11 @@ class ModService:
             item, {"preview_images": final_image_list}
         )
 
-        # 4. Augment the result with the list of deleted paths for cache invalidation.
+        # 5. Augment the result with the list of deleted paths for cache invalidation.
         if update_result.get("success"):
             update_result["deleted_paths"] = successfully_deleted_paths
+            if fallback_warnings:
+                update_result["fallback_warnings"] = fallback_warnings
 
         return update_result
 
@@ -891,6 +901,30 @@ class ModService:
             error_msg = (
                 f"An unexpected error occurred while preparing to clear images: {e}"
             )
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    def reorder_preview_images(self, item: FolderItem, new_order: list[Path]) -> dict:
+        """
+        Reorders the preview images list for a mod. Used to set a specific image
+        as the cover by moving it to index 0.
+        """
+        if not isinstance(item, FolderItem):
+            return {"success": False, "error": "Invalid item type."}
+
+        try:
+            # Convert Path objects to relative names (as stored in info.json)
+            image_names = [
+                p.relative_to(item.folder_path).as_posix()
+                if p.is_absolute()
+                else p
+                for p in new_order
+            ]
+            return self.update_item_properties(
+                item, {"preview_images": image_names}
+            )
+        except Exception as e:
+            error_msg = f"Failed to reorder preview images: {e}"
             logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
 

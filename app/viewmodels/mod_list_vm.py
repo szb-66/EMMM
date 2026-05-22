@@ -827,6 +827,24 @@ class ModListViewModel(QObject):
                 self.selection_invalidated.emit()
         # -----------------------------------------------------------------
 
+        # --- Default foldergrid selection (first enabled, or first if none enabled) ---
+        if item_id_to_select is None and self.context == CONTEXT_FOLDERGRID and self.master_list:
+            first_enabled = next(
+                (item for item in self.master_list if item.status == ModStatus.ENABLED),
+                None,
+            )
+            if first_enabled:
+                item_id_to_select = first_enabled.id
+                self.last_selected_item_id = first_enabled.id
+                self.last_selected_item_name = first_enabled.actual_name
+                logger.info(f"Auto-selecting first enabled mod: '{first_enabled.actual_name}'")
+            elif self.master_list:
+                first_item = self.master_list[0]
+                item_id_to_select = first_item.id
+                self.last_selected_item_id = first_item.id
+                self.last_selected_item_name = first_item.actual_name
+                logger.info(f"No enabled mods. Auto-selecting first mod: '{first_item.actual_name}'")
+        # -----------------------------------------------------------------
 
         self._update_available_filters()
         self.apply_filters_and_search(item_id_to_select=item_id_to_select)
@@ -980,6 +998,11 @@ class ModListViewModel(QObject):
 
             hydrated_data = self._create_dict_from_item(hydrated_item)
             self.item_needs_update.emit(hydrated_data)
+
+            # If the hydrated item is the currently selected foldergrid item,
+            # refresh the preview panel so it shows the full data (preview_images, etc.)
+            if self.context == CONTEXT_FOLDERGRID and self.last_selected_item_id == hydrated_item.id:
+                self.foldergrid_item_modified.emit(hydrated_item)
         except (ValueError, StopIteration):
             logger.warning(
                 f"Could not find item {hydrated_item.id} to update post-hydration. List may have been reloaded."

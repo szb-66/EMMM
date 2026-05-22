@@ -1,29 +1,31 @@
 # app/views/components/thumbnail_widget.py
 
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
-from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
     QContextMenuEvent,
     QDragEnterEvent,
     QDropEvent,
-    QMouseEvent,
     QPixmap,
+    QResizeEvent,
 )
 from PyQt6.QtWidgets import (
     QFileDialog,
-    QMenu,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QStackedWidget,
     QSizePolicy,
+    QScrollArea,
+    QLabel,
+    QFrame,
+    QDialog,
 )
 
 from qfluentwidgets import (
-    HorizontalFlipView,
     InfoBar,
     InfoBarPosition,
     MessageBox,
@@ -35,26 +37,121 @@ from qfluentwidgets import (
     SubtitleLabel,
     TransparentPushButton,
     VBoxLayout,
+    PrimaryPushButton,
 )
 
-from app.viewmodels.preview_panel_vm import PreviewPanelViewModel  # Adjusted import
+from app.viewmodels.preview_panel_vm import PreviewPanelViewModel
 from app.core.constants import SUPPORTED_IMAGE_EXTENSIONS
+
+THUMB_HEIGHT = 210
+THUMB_SPACING = 8
+THUMB_WIDTH_MIN = 80
+THUMB_WIDTH_MAX = 400
+
+
+class FullSizeImageDialog(QDialog):
+    """Dialog that displays an image at its natural size."""
+
+    def __init__(self, pixmap: QPixmap, title: str = "", parent=None):
+        super().__init__(parent, Qt.WindowType.Window)
+        self.setWindowTitle(f"Preview - {title}" if title else "Preview")
+        self.setMinimumSize(400, 300)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        label = QLabel()
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setPixmap(pixmap)
+        scroll.setWidget(label)
+
+        layout.addWidget(scroll)
+
+        # Close button bar
+        btn_bar = QHBoxLayout()
+        btn_bar.setContentsMargins(12, 8, 12, 8)
+        close_btn = PrimaryPushButton(FluentIcon.CLOSE, "Close")
+        close_btn.clicked.connect(self.accept)
+        btn_bar.addStretch(1)
+        btn_bar.addWidget(close_btn)
+        btn_bar.addStretch(1)
+        layout.addLayout(btn_bar)
+
+        # Size the dialog to fit the image (with a reasonable max)
+        img_size = pixmap.size()
+        max_w = 1200
+        max_h = 900
+        dlg_w = min(img_size.width() + 40, max_w)
+        dlg_h = min(img_size.height() + 80, max_h)
+        self.resize(int(dlg_w), int(dlg_h))
+
+
+class ThumbnailGalleryLabel(QLabel):
+    """A clickable thumbnail label with selection highlight."""
+
+    clicked = pyqtSignal(int)
+    doubleClicked = pyqtSignal(int)
+
+    def __init__(self, image_path: Path, index: int, parent=None):
+        super().__init__(parent)
+        self.image_path = image_path
+        self.index = index
+        self._pixmap = None
+        self._is_selected = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_style()
+
+    def set_pixmap(self, pixmap):
+        self._pixmap = pixmap
+        super().setPixmap(pixmap)
+
+    def set_selected(self, selected: bool):
+        if self._is_selected == selected:
+            return
+        self._is_selected = selected
+        self._update_style()
+
+    def _update_style(self):
+        if self._is_selected:
+            self.setStyleSheet(
+                "border: 2px solid #60cdff; border-radius: 4px; background-color: rgba(96, 205, 255, 0.08);"
+            )
+        else:
+            self.setStyleSheet(
+                "border: 2px solid transparent; border-radius: 4px;"
+            )
+
+    def mousePressEvent(self, ev):
+        self.clicked.emit(self.index)
+        super().mousePressEvent(ev)
+
+    def mouseDoubleClickEvent(self, ev):
+        self.doubleClicked.emit(self.index)
+        super().mouseDoubleClickEvent(ev)
 
 
 class ThumbnailSliderWidget(QWidget):
     """
-    A complex widget that displays an interactive image slider using HorizontalFlipView,
-    along with controls for managing images.
+    A widget that displays preview images in a horizontally scrollable gallery,
+    along with controls for managing images (add, paste, remove, clear, set as cover).
     """
 
     def __init__(
         self,
-        viewmodel: PreviewPanelViewModel,  # Use specific ViewModel for better type hinting
+        viewmodel: PreviewPanelViewModel,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.view_model = viewmodel
         self._image_paths: List[Path] = []
+        self._selected_index = 0
+        self._thumb_labels: List[ThumbnailGalleryLabel] = []
+        self._pixmap_cache: dict[str, QPixmap] = {}
 
         # Enable drag & drop for image files
         self.setAcceptDrops(True)
@@ -68,45 +165,68 @@ class ThumbnailSliderWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         self.stack = QStackedWidget(self)
 
-        # --- 1. Main View with FlipView and Controls ---
-        # (This part remains the same)
+        # --- 1. Main View with Scrollable Gallery and Controls ---
         self.main_content_widget = QWidget()
         content_layout = QVBoxLayout(self.main_content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(8)
-        self.flip_view = HorizontalFlipView(self)
-        self.flip_view.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+
+        # Scroll area for horizontal gallery
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-        self.flip_view.setObjectName("thumbnailSlider")
-        self.flip_view.setFixedWidth(240)
-        self.flip_view.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        self.scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
+        # Inner widget holding the horizontal thumbnail layout
+        self.gallery_widget = QWidget()
+        self.gallery_layout = QHBoxLayout(self.gallery_widget)
+        self.gallery_layout.setContentsMargins(4, 4, 4, 4)
+        self.gallery_layout.setSpacing(THUMB_SPACING)
+        self.gallery_layout.addStretch(1)  # Push thumbnails to the left
+        self.gallery_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+
+        self.scroll_area.setWidget(self.gallery_widget)
+
+        # Control bar with buttons
         control_bar_layout = QHBoxLayout()
         control_bar_layout.setContentsMargins(5, 0, 5, 0)
         control_bar_layout.setSpacing(5)
         self.index_label = CaptionLabel("0 / 0")
+        self.set_cover_button = ToolButton(FluentIcon.PHOTO, self)
+        self.set_cover_button.setToolTip("Set as cover image")
+        self.set_cover_button.setVisible(False)
         self.add_button = ToolButton(FluentIcon.ADD, self)
         self.add_button.setToolTip("Add image from file...")
         self.paste_button = ToolButton(FluentIcon.PASTE, self)
         self.paste_button.setToolTip("Paste image from clipboard")
         self.remove_button = ToolButton(FluentIcon.DELETE, self)
-        self.remove_button.setToolTip("Remove current image")
+        self.remove_button.setToolTip("Remove selected image")
         self.clear_all_button = ToolButton(FluentIcon.REMOVE, self)
         self.clear_all_button.setToolTip("Remove all images")
         self.loading_ring = ProgressRing(self)
         self.loading_ring.setFixedSize(16, 16)
         self.loading_ring.setVisible(False)
+
         control_bar_layout.addWidget(self.index_label, 0, Qt.AlignmentFlag.AlignLeft)
         control_bar_layout.addStretch(1)
+        control_bar_layout.addWidget(self.set_cover_button)
         control_bar_layout.addWidget(self.loading_ring)
         control_bar_layout.addWidget(self.add_button)
         control_bar_layout.addWidget(self.paste_button)
         control_bar_layout.addWidget(self.remove_button)
         control_bar_layout.addWidget(self.clear_all_button)
-        content_layout.addWidget(self.flip_view, 1)
+
+        content_layout.addWidget(self.scroll_area, 1)
         content_layout.addLayout(control_bar_layout)
 
-        # --- 2. Null State View (New and Improved) ---
+        # --- 2. Null State View ---
         self.null_state_widget = QWidget(self)
         null_layout = VBoxLayout(self.null_state_widget)
         null_layout.setSpacing(10)
@@ -116,7 +236,6 @@ class ThumbnailSliderWidget(QWidget):
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("color: grey;")
 
-        # Horizontal layout for the small action buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
 
@@ -137,67 +256,137 @@ class ThumbnailSliderWidget(QWidget):
 
         # --- Assemble Stack ---
         self.stack.addWidget(self.main_content_widget)
-        self.stack.addWidget(self.null_state_widget)  # Use the new widget
+        self.stack.addWidget(self.null_state_widget)
         main_layout.addWidget(self.stack)
-        self.stack.setCurrentWidget(
-            self.null_state_widget
-        )  # Default to the new null state
+        self.stack.setCurrentWidget(self.null_state_widget)
 
     def _connect_signals(self):
-        # View -> VM (Existing connections are correct)
-        self.flip_view.currentIndexChanged.connect(self._update_index_label)
         self.add_button.clicked.connect(self._on_add_button_clicked)
         self.paste_button.clicked.connect(self._on_paste_button_clicked)
         self.remove_button.clicked.connect(self._on_remove_button_clicked)
         self.clear_all_button.clicked.connect(self._on_clear_all_button_clicked)
+        self.set_cover_button.clicked.connect(self._on_set_cover_clicked)
 
-        # --- FIX: Connect the new buttons in the null state view ---
         self.null_add_button.clicked.connect(self._on_add_button_clicked)
         self.null_paste_button.clicked.connect(self._on_paste_button_clicked)
 
-        # VM -> View (This connection is correct)
         self.view_model.thumbnail_operation_in_progress.connect(
             self._on_loading_state_changed
         )
 
     def set_image_paths(self, image_paths: list[Path]):
-        """Receives a list of image paths and displays them in the FlipView."""
-        # 1. Update the internal data model first. This is our source of truth.
+        """Receives a list of image paths and displays them in the gallery."""
         self._image_paths = image_paths or []
+        self._selected_index = 0
 
-        # 2. Use the documented .clear() method to reset the view widget.
-        self.flip_view.clear()
-        self.flip_view.setCurrentIndex(0)  # Reset to the first index
+        # Clear existing thumbnails
+        self._clear_gallery()
 
-        # 3. Check the state and switch between the null view and the content view.
         if not self._image_paths:
             self.stack.setCurrentWidget(self.null_state_widget)
-            self._update_index_label()  # Ensure label resets to "0 / 0"
+            self._update_index_label()
+            self.set_cover_button.setVisible(False)
             return
 
         self.stack.setCurrentWidget(self.main_content_widget)
 
-        # 4. Use the documented .addImages() method to populate the view from scratch.
-        self.flip_view.addImages([str(p) for p in self._image_paths])
+        # Create thumbnail labels for each image
+        for i, path in enumerate(self._image_paths):
+            label = ThumbnailGalleryLabel(path, i, self.gallery_widget)
+            label.clicked.connect(self._on_thumbnail_clicked)
+            label.doubleClicked.connect(self._on_thumbnail_double_clicked)
+            self.gallery_layout.insertWidget(
+                self.gallery_layout.count() - 1, label
+            )  # Before stretch
+            self._thumb_labels.append(label)
 
-        # 5. Explicitly set the index to 0 to ensure it always starts on the first slide.
-        # This fixes the bug where a new image appears on the second slide.
-        if self.flip_view.count() > 0:  # .count() is a valid QListWidget method
-            self.flip_view.setCurrentIndex(0)
+        # Select the first thumbnail
+        if self._thumb_labels:
+            self._thumb_labels[0].set_selected(True)
 
-        # 6. Update the 'X / Y' label based on the new, correct state.
+        self._update_thumb_sizes()
         self._update_index_label()
 
+    def _clear_gallery(self):
+        """Remove all thumbnail labels from the gallery layout."""
+        for label in self._thumb_labels:
+            self.gallery_layout.removeWidget(label)
+            label.deleteLater()
+        self._thumb_labels.clear()
+        self._pixmap_cache.clear()
+
+    def _update_thumb_sizes(self):
+        """Calculate per-image thumbnail sizes based on image aspect ratios."""
+        if not self._thumb_labels:
+            return
+
+        for label in self._thumb_labels:
+            # Check cache first to avoid reloading from disk on resize
+            cache_key = str(label.image_path)
+            pixmap = self._pixmap_cache.get(cache_key)
+            if pixmap is None:
+                pixmap = QPixmap(cache_key)
+                if pixmap.isNull():
+                    label.setFixedSize(THUMB_WIDTH_MIN, THUMB_HEIGHT)
+                    continue
+                self._pixmap_cache[cache_key] = pixmap
+
+            # Calculate width from aspect ratio at fixed height
+            w = int(THUMB_HEIGHT * pixmap.width() / pixmap.height())
+            w = max(THUMB_WIDTH_MIN, min(w, THUMB_WIDTH_MAX))
+            size = QSize(w, THUMB_HEIGHT)
+
+            scaled = pixmap.scaled(
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            label.set_pixmap(scaled)
+            label.setFixedSize(size)
+
+    def _on_thumbnail_clicked(self, index: int):
+        """Handle clicking a thumbnail to select it."""
+        if index < 0 or index >= len(self._thumb_labels):
+            return
+
+        # Deselect all, select the clicked one
+        for i, label in enumerate(self._thumb_labels):
+            label.set_selected(i == index)
+        self._selected_index = index
+        self._update_index_label()
+
+        # Scroll to ensure the clicked thumbnail is visible
+        if index < len(self._thumb_labels):
+            self.scroll_area.ensureWidgetVisible(self._thumb_labels[index])
+
+    def _on_thumbnail_double_clicked(self, index: int):
+        """Open a full-size viewer for the double-clicked image."""
+        if index < 0 or index >= len(self._image_paths):
+            return
+        path = self._image_paths[index]
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return
+
+        dialog = FullSizeImageDialog(
+            pixmap, title=path.name, parent=self.window()
+        )
+        dialog.exec()
+
+    def resizeEvent(self, event: QResizeEvent):
+        """Recalculate thumbnail sizes when the widget is resized."""
+        super().resizeEvent(event)
+        self._update_thumb_sizes()
+
     def _update_index_label(self):
-        """Memperbarui label '1 / 5'."""
         total = len(self._image_paths)
-        current = self.flip_view.currentIndex() + 1 if total > 0 else 0
+        current = self._selected_index + 1 if total > 0 else 0
         self.index_label.setText(f"{current} / {total}")
+        self.set_cover_button.setVisible(total > 1)
 
     # --- Drag & Drop Events ---
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """Accepts the drag event if it contains valid image files."""
         mime_data = event.mimeData()
         if mime_data is not None and mime_data.hasUrls():
             for url in mime_data.urls():
@@ -209,7 +398,6 @@ class ThumbnailSliderWidget(QWidget):
         event.ignore()
 
     def dropEvent(self, event: QDropEvent):
-        """Handles dropped files and forwards them to the ViewModel."""
         mime_data = event.mimeData()
         urls = []
         if mime_data is not None and mime_data.hasUrls():
@@ -236,11 +424,8 @@ class ThumbnailSliderWidget(QWidget):
 
     # --- Context Menu Event ---
     def contextMenuEvent(self, event: QContextMenuEvent):
-        """Creates and shows a fluent context menu on right-click over the flip view."""
-        # Use RoundMenu for a fluent look and feel
         menu = RoundMenu(parent=self)
 
-        # --- Add/Paste Actions ---
         add_action = QAction(FluentIcon.ADD.icon(), "Add Image...", self)
         add_action.triggered.connect(self._on_add_button_clicked)
         menu.addAction(add_action)
@@ -249,13 +434,20 @@ class ThumbnailSliderWidget(QWidget):
         paste_action.triggered.connect(self._on_paste_button_clicked)
         menu.addAction(paste_action)
 
-        # Only add deletion options if there are images to delete
         if self._image_paths:
             menu.addSeparator()
 
-            # --- Deletion Actions ---
-            # Corrected: using .icon() to get the QIcon object
-            remove_action = QAction(FluentIcon.DELETE.icon(), "Remove This Image", self)
+            if len(self._image_paths) > 1:
+                set_cover_action = QAction(
+                    FluentIcon.PHOTO.icon(), "Set as Cover", self
+                )
+                set_cover_action.triggered.connect(self._on_set_cover_clicked)
+                menu.addAction(set_cover_action)
+                menu.addSeparator()
+
+            remove_action = QAction(
+                FluentIcon.DELETE.icon(), "Remove This Image", self
+            )
             remove_action.triggered.connect(self._on_remove_button_clicked)
             menu.addAction(remove_action)
 
@@ -265,14 +457,11 @@ class ThumbnailSliderWidget(QWidget):
             clear_all_action.triggered.connect(self._on_clear_all_button_clicked)
             menu.addAction(clear_all_action)
 
-        # Use the exec method from RoundMenu, with animation enabled
         menu.exec(event.globalPos(), ani=True)
 
-    def _on_thumbnail_ready(self, image_id: str, pixmap: QPixmap):
-        pass
+    # --- Button Handlers ---
 
     def _on_add_button_clicked(self):
-        """Handles the add image button click by opening a file dialog."""
         file_names, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Preview Images",
@@ -297,17 +486,14 @@ class ThumbnailSliderWidget(QWidget):
                 )
 
     def _on_paste_button_clicked(self):
-        """Handles pasting an image from the clipboard."""
         self.view_model.paste_thumbnail_from_clipboard()
 
     def _on_remove_button_clicked(self):
-        """Handles removing the currently displayed image."""
-        if not self._image_paths:
+        if not self._image_paths or not self._thumb_labels:
             return
 
-        current_index = self.flip_view.currentIndex()
-        if 0 <= current_index < len(self._image_paths):
-            path_to_remove = self._image_paths[current_index]
+        if 0 <= self._selected_index < len(self._image_paths):
+            path_to_remove = self._image_paths[self._selected_index]
 
             reply = MessageBox(
                 "Confirm Deletion",
@@ -318,7 +504,6 @@ class ThumbnailSliderWidget(QWidget):
                 self.view_model.remove_thumbnail(path_to_remove)
 
     def _on_clear_all_button_clicked(self):
-        """Handles removing all images."""
         if not self._image_paths:
             return
 
@@ -332,13 +517,22 @@ class ThumbnailSliderWidget(QWidget):
         if reply.exec():
             self.view_model.remove_all_thumbnails()
 
+    def _on_set_cover_clicked(self):
+        """Set the currently selected image as the cover (move to front)."""
+        if not self._image_paths or not self._thumb_labels:
+            return
+        if self._selected_index < 0 or self._selected_index >= len(self._image_paths):
+            return
+        if self._selected_index == 0:
+            return  # Already the cover
+
+        path = self._image_paths[self._selected_index]
+        self.view_model.set_preview_image_as_cover(path)
+
     def _on_loading_state_changed(self, is_loading: bool):
-        """Shows/hides the loading ring and disables/enables controls."""
         self.loading_ring.setVisible(is_loading)
         self.add_button.setEnabled(not is_loading)
         self.paste_button.setEnabled(not is_loading)
         self.remove_button.setEnabled(not is_loading)
         self.clear_all_button.setEnabled(not is_loading)
-
-    def _on_small_thumbnail_selected(self, image_path: Path):
-        pass
+        self.set_cover_button.setEnabled(not is_loading)

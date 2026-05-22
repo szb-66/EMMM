@@ -293,6 +293,7 @@ class ThumbnailService(QObject):
     def invalidate_cache(self, item_id: str, path: Path | None = None):
         """
         Invalidates the cache for a specific item by removing it from both L1 and L2 caches.
+        The L2 cache file is always identified by item_id, never by source path.
         """
         if not item_id:
             return
@@ -302,13 +303,11 @@ class ThumbnailService(QObject):
             logger.debug(f"Invalidating L1 cache for item '{item_id}'")
             del self.memory_cache[item_id]
 
-        # Remove from L2 cache (disk)
-        if path is None:
-            path = self.cache_dir / f"{item_id}.jpg"
-
-        if path.exists():
+        # Remove from L2 cache (disk) — always by item_id, never by source path
+        cache_path = self.cache_dir / f"{item_id}.jpg"
+        if cache_path.exists():
             try:
-                path.unlink()
+                cache_path.unlink()
                 logger.debug(f"Invalidated L2 cache for item '{item_id}'")
             except OSError as e:
-                logger.error(f"Failed to remove cache file {path}: {e}")
+                logger.error(f"Failed to remove cache file {cache_path}: {e}")

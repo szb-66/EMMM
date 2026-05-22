@@ -3,7 +3,7 @@ import asyncio
 import copy
 from pathlib import Path
 from typing import Any, Dict
-from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, pyqtSignal
 from qfluentwidgets import MessageBox
 from app.models.mod_item_model import FolderItem, ModStatus
 from app.services.Iniparsing_service import IniKeyParsingService, KeyBinding
@@ -64,6 +64,13 @@ class PreviewPanelViewModel(QObject):
         self.editable_keybindings: list[KeyBinding] = (
             []
         )  # A mutable list of KeyBinding objects for live edits
+
+        # --- Thumbnail operation timeout protection ---
+        self._thumbnail_op_timer = QTimer(self)
+        self._thumbnail_op_timer.setSingleShot(True)
+        self._thumbnail_op_timer.setInterval(30000)  # 30 seconds
+        self._thumbnail_op_timer.timeout.connect(self._on_thumbnail_operation_timeout)
+        self._thumbnail_op_timed_out = False
 
     # ---Public Methods (API for the View) ---
     def get_description_editor_height(self) -> int:
@@ -328,8 +335,11 @@ class PreviewPanelViewModel(QObject):
         """
         A generic helper to start any thumbnail-related background task.
         This ensures the function reference (not its result) is passed to the Worker.
+        Starts a 30-second timeout timer to prevent UI from freezing indefinitely.
         """
         self.thumbnail_operation_in_progress.emit(True)
+        self._thumbnail_op_timed_out = False
+        self._thumbnail_op_timer.start()
 
         # Pass the function and its arguments separately to the worker
         worker = Worker(service_function, *args)
@@ -341,6 +351,7 @@ class PreviewPanelViewModel(QObject):
             thread_pool.start(worker)
         else:
             logger.error("QThreadPool.globalInstance() is None. Cannot start worker.")
+            self._thumbnail_op_timer.stop()
             self.thumbnail_operation_in_progress.emit(False)
 
     # ---Public Slots (for UI Edit Tracking) ---
@@ -350,6 +361,10 @@ class PreviewPanelViewModel(QObject):
         """
         Handles the result from any thumbnail operation (add, remove, remove_all).
         """
+        self._thumbnail_op_timer.stop()
+        if self._thumbnail_op_timed_out:
+            logger.warning("Thumbnail operation finished but already timed out. Ignoring result.")
+            return
         self.thumbnail_operation_in_progress.emit(False)  # Hide loading indicator
 
         if not result.get("success"):
@@ -379,6 +394,7 @@ class PreviewPanelViewModel(QObject):
     # Add this new slot for handling unexpected worker errors
     def _on_thumbnail_operation_error(self, error_info: tuple):
         """Handles unexpected errors from the thumbnail worker thread."""
+        self._thumbnail_op_timer.stop()
         self.thumbnail_operation_in_progress.emit(False)
         logger.error(
             f"A critical error occurred in the thumbnail worker: {error_info[1]}",
@@ -386,6 +402,21 @@ class PreviewPanelViewModel(QObject):
         )
         self.toast_requested.emit(
             "An unexpected error occurred while managing thumbnails.", "error"
+        )
+
+    def _on_thumbnail_operation_timeout(self):
+        """Handles the 30-second timeout for thumbnail operations.
+
+        Resets the loading state and shows an error toast so the UI
+        can recover even if a background worker hangs indefinitely.
+        """
+        if self._thumbnail_op_timed_out:
+            return
+        self._thumbnail_op_timed_out = True
+        self.thumbnail_operation_in_progress.emit(False)
+        logger.error("Thumbnail operation timed out after 30 seconds.")
+        self.toast_requested.emit(
+            "Thumbnail operation timed out. Please try again.", "error"
         )
 
     def on_description_changed(self, text: str):
@@ -661,6 +692,12 @@ class PreviewPanelViewModel(QObject):
         Handles the result from ANY thumbnail operation.
         Processes the result, invalidates cache, and triggers all necessary UI updates.
         """
+        self._thumbnail_op_timer.stop()
+        if self._thumbnail_op_timed_out:
+            logger.warning(
+                "Thumbnail operation finished but already timed out. Ignoring result."
+            )
+            return
         self.thumbnail_operation_in_progress.emit(False)
 
         if not result.get("success"):
@@ -682,17 +719,25 @@ class PreviewPanelViewModel(QObject):
             for path in deleted_paths:
                 self.thumbnail_service.invalidate_cache(
                     new_item_model.id, path
-                )  # Invalidate cache for any deleted images
-        deleted_paths = result.get("deleted_paths", [])
-        if deleted_paths:
-            logger.info(
-                f"Invalidating cache for {len(deleted_paths)} deleted thumbnails."
+                )
+
+        # Show warning toast if fallback (permanent) deletion was used
+        fallback_warnings = result.get("fallback_warnings", [])
+        if fallback_warnings:
+            self.toast_requested.emit(
+                f"{len(fallback_warnings)} image(s) were permanently deleted "
+                "(recycle bin unavailable).", "warning"
             )
-            for path in deleted_paths:
-                self.thumbnail_service.invalidate_cache(new_item_model.id, path)
 
         # Update state and refresh UI
         self.current_item_model = new_item_model
+
+        # Always invalidate cache so the grid thumbnail regenerates
+        # from the updated preview_images[0]. This specifically covers
+        # reorder/set-as-cover operations that don't produce deleted_paths.
+        # For add/remove flows the extra invalidation is harmless.
+        self.thumbnail_service.invalidate_cache(self.current_item_model.id)
+
         self.toast_requested.emit("Thumbnails updated successfully.", "success")
         if isinstance(self.current_item_model, FolderItem):
             self.item_loaded.emit(self._create_dict_from_item(self.current_item_model))
@@ -711,6 +756,32 @@ class PreviewPanelViewModel(QObject):
             self.add_new_thumbnail(image_data)
         else:
             self.toast_requested.emit("No image found in the clipboard.", "warning")
+
+    def set_preview_image_as_cover(self, image_path: Path):
+        """Moves the specified image to index 0 so it becomes the mod cover."""
+        if not self.current_item_model or not image_path:
+            return
+
+        old_list = list(self.current_item_model.preview_images)
+        if image_path not in old_list or old_list.index(image_path) == 0:
+            return
+
+        # Move the target image to the front
+        new_list = [image_path] + [p for p in old_list if p != image_path]
+
+        logger.info(
+            f"Setting '{image_path.name}' as cover for '{self.current_item_model.actual_name}'"
+        )
+        self.thumbnail_operation_in_progress.emit(True)
+
+        worker = Worker(
+            self.mod_service.reorder_preview_images,
+            self.current_item_model,
+            new_list,
+        )
+        worker.signals.result.connect(self._on_thumbnail_operation_complete)
+        worker.signals.error.connect(self._on_thumbnail_operation_error)
+        QThreadPool.globalInstance().start(worker)
 
     def clear_panel(self):
         "" "Clean the preview panel." ""

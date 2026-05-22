@@ -266,7 +266,7 @@ class FolderGridPanel(QWidget):
             self.grid_widget.clear_items()
             self.stack.setCurrentWidget(self.placeholder_label)
 
-    def _on_items_updated(self, items_data: list[dict]):
+    def _on_items_updated(self, items_data: list[dict], item_id_to_select: str | None = None):
         """
         Flow 2.3: Repopulates the entire grid view with new skeleton items.
         """
@@ -281,6 +281,8 @@ class FolderGridPanel(QWidget):
 
         self.stack.setCurrentWidget(self.scroll_area)
 
+        item_to_select_data = None
+
         for item_data in items_data:
             # 1. Create the card widget
             widget = FolderGridItemWidget(
@@ -294,6 +296,14 @@ class FolderGridPanel(QWidget):
 
             self.grid_widget.add_widget(widget)
             self._item_widgets[item_data["id"]] = widget
+
+            # Track which widget to auto-select
+            if item_id_to_select is not None and item_data["id"] == item_id_to_select:
+                item_to_select_data = item_data
+
+        # Auto-select the intended item (triggers preview panel update)
+        if item_to_select_data is not None:
+            self._on_grid_item_selected(item_to_select_data)
 
     def _on_item_needs_update(self, item_data: dict):
         """Flow 2.3 Stage 2: Finds and redraws a single widget with hydrated data."""
