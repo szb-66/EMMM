@@ -254,16 +254,69 @@ class ModService:
 
             # --- CONTEXT: FOLDERGRID (Final Mods or Navigable Folders) ---
             elif isinstance(skeleton_item, FolderItem):
-                if not any(
+                info_path = skeleton_item.folder_path / INFO_JSON_NAME
+
+                # --- Check if this is a navigable folder (no .ini files) ---
+                has_ini = any(
                     p.suffix.lower() == ".ini"
                     for p in skeleton_item.folder_path.iterdir()
-                ):
+                )
+
+                if not has_ini:
+                    # It's a navigable folder — still scan for preview images
+                    # so collection folders can show thumbnails.
+                    info = {}
+                    needs_json_update = False
+
+                    if info_path.is_file():
+                        try:
+                            with open(info_path, "r", encoding="utf-8") as f:
+                                info = json.load(f)
+                        except json.JSONDecodeError:
+                            needs_json_update = True
+                    else:
+                        needs_json_update = True
+
+                    # --- Reality Check ---
+                    found_images = sorted(
+                        [
+                            p
+                            for p in skeleton_item.folder_path.iterdir()
+                            if p.is_file()
+                            and p.stem.lower().startswith(FOLDER_PREVIEW_PREFIX)
+                            and p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+                        ]
+                    )
+
+                    # --- Reconcile ---
+                    json_image_paths = {
+                        skeleton_item.folder_path / p
+                        for p in info.get("image_paths", [])
+                    }
+                    if set(found_images) != json_image_paths:
+                        logger.info(
+                            f"Physical image files for navigable folder '{skeleton_item.actual_name}' "
+                            "do not match info.json. Syncing."
+                        )
+                        info["image_paths"] = [p.name for p in found_images]
+                        needs_json_update = True
+
+                    if needs_json_update:
+                        self._write_json(info_path, info)
+
+                    image_paths = [
+                        skeleton_item.folder_path / img
+                        for img in info.get("image_paths", [])
+                    ]
+
                     return dataclasses.replace(
-                        skeleton_item, is_navigable=True, is_skeleton=False
+                        skeleton_item,
+                        is_navigable=True,
+                        is_skeleton=False,
+                        preview_images=image_paths,
                     )
 
                 # It's a final mod, read info.json
-                info_path = skeleton_item.folder_path / INFO_JSON_NAME
                 info = {}
                 needs_json_update = False
 

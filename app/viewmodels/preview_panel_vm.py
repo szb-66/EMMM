@@ -45,6 +45,7 @@ class PreviewPanelViewModel(QObject):
         image_utils,
         foldergrid_vm,
         sys_utils,
+        note_service=None,
     ):
         super().__init__()
         # ---Injected Services ---
@@ -55,12 +56,14 @@ class PreviewPanelViewModel(QObject):
         self.ini_parsing_service: IniKeyParsingService = ini_parsing_service
         self.image_utils: ImageUtils = image_utils
         self.thumbnail_service: ThumbnailService = thumbnail_service
+        self.note_service = note_service
         # ---Internal State ---
         self.current_item_model: FolderItem | None = None
         self.is_description_dirty = False
         self.is_ini_dirty = False
         self._unsaved_ini_changes: Dict[str, Dict[str, Any]] = {}
         self._unsaved_description: str | None = None
+        self._notes_dirty = False
         self.editable_keybindings: list[KeyBinding] = (
             []
         )  # A mutable list of KeyBinding objects for live edits
@@ -143,12 +146,9 @@ class PreviewPanelViewModel(QObject):
 
         # ── push basic data to UI immediately ────────────────────────────────
         if isinstance(self.current_item_model, FolderItem):
-            if isinstance(self.current_item_model, FolderItem):
-                self.item_loaded.emit(
-                    self._create_dict_from_item(self.current_item_model)
-                )
-            else:
-                self.item_loaded.emit(None)
+            self.item_loaded.emit(
+                self._create_dict_from_item(self.current_item_model)
+            )
         else:
             self.item_loaded.emit(None)
 
@@ -425,7 +425,7 @@ class PreviewPanelViewModel(QObject):
             return
 
         # Compare the current text with the original description of the model
-        current_description = self.current_item_model.description or ""
+        current_description = (self.current_item_model.description or "").replace("\r\n", "\n")
         is_now_dirty = text != current_description
 
         # Only update and sign signal if the state 'is_description_dirty' changes
@@ -500,6 +500,9 @@ class PreviewPanelViewModel(QObject):
             assignment_changes = changes_for_binding.setdefault("assignments", {})
             # Field_Identifier here is the name of the variable (STR)
             assignment_changes[field_identifier] = new_value
+        elif field_type == "note":
+            binding.note = new_value
+            self._notes_dirty = True
         else:
             logger.warning(
                 f"Ignoring edit with unsupported field type={field_type} "
@@ -534,21 +537,29 @@ class PreviewPanelViewModel(QObject):
     # ---Private Slots for Async Results ---
     def save_ini_config(self):
         """Starting the configuration storage process. This is in the background."""
-        if not self._unsaved_ini_changes:
+        has_ini_changes = bool(self._unsaved_ini_changes)
+        has_note_changes = self._notes_dirty
+
+        if not has_ini_changes and not has_note_changes:
             return
 
         logger.info("Saving .ini configuration changes...")
         self.save_config_state.emit("Saving...", False)
 
-        worker = Worker(
-            self.ini_parsing_service.save_ini_changes, self.editable_keybindings
-        )
-        worker.signals.result.connect(self._on_ini_saved)
-        # Todo: Also Connect to Slot Error Handling
-
-        thread_pool = QThreadPool.globalInstance()
-        if thread_pool:
-            thread_pool.start(worker)
+        if has_ini_changes:
+            worker = Worker(
+                self.ini_parsing_service.save_ini_changes, self.editable_keybindings
+            )
+            worker.signals.result.connect(self._on_ini_saved)
+            thread_pool = QThreadPool.globalInstance()
+            if thread_pool:
+                thread_pool.start(worker)
+        else:
+            # Notes-only: save directly instead of routing through INI callback
+            self._save_notes()
+            self.save_config_state.emit("Save Configuration", True)
+            self._notes_dirty = False
+            self.ini_dirty_state_changed.emit(False)
 
     def _on_ini_config_loaded(self, result: dict):
         """Handles the result of the .ini parsing worker."""
@@ -556,6 +567,9 @@ class PreviewPanelViewModel(QObject):
 
         if result.get("success"):
             self.editable_keybindings = result.get("data", [])
+            # Fill notes from _emm_notes.json
+            if self.current_item_model and self.note_service:
+                self._fill_notes_from_file()
             # Save the original state for comparison when there is editing
             self.original_keybindings = copy.deepcopy(self.editable_keybindings)
 
@@ -570,6 +584,42 @@ class PreviewPanelViewModel(QObject):
             "A critical error occurred while reading mod configurations.", "error"
         )
         self.ini_config_ready.emit([])  # Send an empty list
+
+    # ── notes helpers ───────────────────────────────────────────────────────
+
+    def _fill_notes_from_file(self) -> None:
+        """Load notes from _emm_notes.json and populate each KeyBinding."""
+        if not self.current_item_model:
+            return
+        notes = self.note_service.load_notes(self.current_item_model.folder_path)
+        if not notes:
+            return
+        for kb in self.editable_keybindings:
+            key = kb.note_key(self.current_item_model.folder_path)
+            kb.note = notes.get(key, "")
+
+    def _flush_notes(self) -> None:
+        """Write all current KeyBinding notes to _emm_notes.json."""
+        if not self.current_item_model:
+            return
+        notes = {}
+        for kb in self.editable_keybindings:
+            if kb.note:
+                key = kb.note_key(self.current_item_model.folder_path)
+                notes[key] = kb.note
+        self.note_service.save_notes(self.current_item_model.folder_path, notes)
+
+    def _save_notes(self) -> bool:
+        """Persist notes to _emm_notes.json. Returns True on success."""
+        if not self.current_item_model or not self.note_service:
+            return False
+        try:
+            self._flush_notes()
+            return True
+        except Exception as e:
+            logger.error("Failed to save notes: %s", e)
+            self.toast_requested.emit("Failed to save notes.", "error")
+            return False
 
     def _on_description_saved(self, result: dict):
         """Handles the result of the description save operation."""
@@ -660,6 +710,7 @@ class PreviewPanelViewModel(QObject):
 
         self.is_ini_dirty = False
         self._unsaved_ini_changes = {}
+        self._notes_dirty = False
         self.ini_dirty_state_changed.emit(False)
         self.save_config_state.emit(
             "Save Configuration", True
@@ -677,10 +728,15 @@ class PreviewPanelViewModel(QObject):
             self.toast_requested.emit(error_msg, "error")
             return
 
+        # Persist notes if dirty
+        if self._notes_dirty:
+            self._save_notes()
+
         self.toast_requested.emit("Configuration saved successfully.", "success")
         # After successfully saved, update State 'Original' and Reset 'Dirty' Flag
         self.original_keybindings = copy.deepcopy(self.editable_keybindings)
         self._unsaved_ini_changes = {}
+        self._notes_dirty = False
         self.ini_dirty_state_changed.emit(False)
 
     def _on_thumbnail_added(self, result: dict):

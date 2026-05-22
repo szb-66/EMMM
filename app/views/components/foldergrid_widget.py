@@ -155,8 +155,13 @@ class FolderGridItemWidget(CardWidget):
         default_icon_key = ""
 
         if is_navigable is True:
-            # It's a confirmed navigable folder. Use the folder icon.
+            # It's a confirmed navigable folder.
+            # Check if it has preview images (collection folder with thumbnails).
             default_icon_key = "folder"
+            preview_images = item_data.get("preview_images", [])
+            if preview_images:
+                default_icon_key = "mod_placeholder"
+                source_path_to_load = preview_images[0]
             # Double-clicking should navigate into it.
             self.setMouseTracking(True)
         elif is_navigable is False:
@@ -276,13 +281,10 @@ class FolderGridItemWidget(CardWidget):
         menu.exec(event.globalPos())
 
     def mousePressEvent(self, event):
-        """Flow 5.2: Notifies the main view that this item was item_selected for preview."""
-        # Do not emit if it's a navigation folder, as that's handled by double-click.
-
-        if not self.item_data.get("is_navigable"):
-            self.item_selected.emit(self.item_data)
+        """Flow 5.2: Notifies the main view that this item was selected for preview.
+        Single-click always updates selection; navigation is handled by double-click."""
+        self.item_selected.emit(self.item_data)
         super().mousePressEvent(event)
-        pass
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         """

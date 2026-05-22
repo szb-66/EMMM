@@ -30,8 +30,8 @@ from app.services.Iniparsing_service import KeyBinding, Assignment
 # ---------- constants ----------
 ROW_MARGINS = (4, 0, 4, 0)
 HEADER_MARGIN = (4, 8, 4, 8)
-FIELD_WIDTH = 160
 SPACING_V = 8
+FIELD_STRETCH = 3  # label:field proportion when space is plentiful
 
 
 class KeyBindingWidget(QWidget):
@@ -73,6 +73,12 @@ class KeyBindingWidget(QWidget):
             header.addWidget(CaptionLabel(f"if: {self.binding_data.condition}"))
         root.addLayout(header)
 
+        # ── note row ──────────────────────────────────────────────────────────────
+        self.note_edit = LineEdit()
+        self.note_edit.setPlaceholderText("Add a note…")
+        self.note_edit.setText(self.binding_data.note)
+        root.addLayout(self._create_row("Note", self.note_edit))
+
         # ── assignments ───────────────────────────────────────────────────────────
         for a in self.binding_data.assignments:
             field = self._create_smart_input(a)
@@ -98,26 +104,23 @@ class KeyBindingWidget(QWidget):
 
     # ── helpers ──────────────────────────────────────────────────────────────────
     def _create_row(self, text: str, field: QWidget) -> QHBoxLayout:
-        """Return HBox: [label][stretch][field-right]."""
+        """Return HBox: [label][field] with field taking extra space."""
         row = QHBoxLayout()
         row.setContentsMargins(*ROW_MARGINS)
-        row.setSpacing(8)
+        row.setSpacing(6)
 
         lbl = BodyLabel(f"{text}:")
         lbl.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
 
-        field.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        field.setFixedWidth(FIELD_WIDTH)
+        field.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
         row.addWidget(lbl)
-        row.addStretch(1)
-        row.addWidget(field, 0, Qt.AlignmentFlag.AlignRight)
+        row.addWidget(field, FIELD_STRETCH)
         return row
 
     def _line_edit(self, text: str) -> LineEdit:
         le = LineEdit()
         le.setText(text)
-        le.setFixedWidth(FIELD_WIDTH)
         return le
 
     def _hline(self) -> QFrame:
@@ -127,7 +130,7 @@ class KeyBindingWidget(QWidget):
         return ln
 
     def _create_assignment_row(self, assignment: Assignment) -> QWidget:
-        """Row: [label][stretch][field-right]."""
+        """Row: [label][field] with field taking extra space."""
         container = QWidget(self)
         container.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -141,23 +144,23 @@ class KeyBindingWidget(QWidget):
         lbl.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
         row.addWidget(lbl)
 
-        row.addStretch(1)
-
         field = self._create_smart_input(assignment)
-        field.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        field.setFixedWidth(FIELD_WIDTH)
+        field.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.assignment_widgets[assignment.variable] = field
-        row.addWidget(field, 0, Qt.AlignmentFlag.AlignRight)
+        row.addWidget(field, FIELD_STRETCH)
 
         container.setLayout(row)
         return container
 
     def _create_smart_input(self, assignment: Assignment) -> QWidget:
-        """SpinBox jika numeric sequence, else ComboBox."""
+        """ComboBox with cycle_options, compressible in narrow panels."""
 
         cb = ComboBox(self)
-        cb.setFixedWidth(FIELD_WIDTH)
-        cb.setStyleSheet("min-width:0;")
+        cb.setStyleSheet(
+            "QComboBox{min-width:0; padding:2px 4px;}"
+            "QComboBox::drop-down{width:16px;}"
+        )
+        cb.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         if assignment.cycle_options:
             cb.addItems(assignment.cycle_options)
         cb.setCurrentText(
@@ -189,19 +192,21 @@ class KeyBindingWidget(QWidget):
             cap.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
             h.addWidget(cap)
 
-            h.addStretch(1)
-
             edit = LineEdit(self)
             edit.setText(val)
-            edit.setFixedWidth(FIELD_WIDTH)
             edit.setStyleSheet("min-width:0;")
             widget_list.append(edit)
-            h.addWidget(edit, 0, Qt.AlignmentFlag.AlignRight)
+            h.addWidget(edit, FIELD_STRETCH)
 
             row.setLayout(h)
             parent_layout.addWidget(row)
 
     def _connect_signals(self):
+        self.note_edit.textChanged.connect(
+            lambda text: self.value_changed.emit(
+                self.binding_id, "note", "", text
+            )
+        )
         for i, edit in enumerate(self.key_edits):
             edit.textChanged.connect(
                 lambda text, index=i: self.value_changed.emit(

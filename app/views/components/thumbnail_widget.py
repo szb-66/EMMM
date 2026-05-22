@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
     QContextMenuEvent,
@@ -507,6 +507,10 @@ class ThumbnailSliderWidget(QWidget):
         if not self._image_paths:
             return
 
+        QTimer.singleShot(0, self._confirm_clear_all)
+
+    def _confirm_clear_all(self):
+        """Show confirmation dialog outside the context menu's event loop."""
         reply = MessageBox(
             "Confirm Clear All",
             "Are you sure you want to remove ALL preview images for this mod?",

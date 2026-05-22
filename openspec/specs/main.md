@@ -31,6 +31,7 @@ main.py  (composition root — wires all dependencies)
   │   ├── IniKeyParsingService— parse & save 3DMigoto .ini keybindings
   │   ├── WorkflowService     — orchestrate multi-step/transactional workflows
   │   ├── FileWatcherService  — watchdog-based directory monitoring
+  │   ├── NoteService         — per-mod keybinding notes (_emm_notes.json)
   │   └── PersistUtils        — shared helpers for d3dx_user.ini persistence
   │
   ├── ViewModels (state & logic for each panel)

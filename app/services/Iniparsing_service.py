@@ -58,6 +58,18 @@ class KeyBinding:
     # A dictionary to hold all variable assignments, e.g., {'$swapvar': ['0','1'], 'convergence': ['1.45']}
     assignments: List[Assignment] = field(default_factory=list)
 
+    # --- User Notes ---
+    # Human-readable remark displayed/edited in the preview panel,
+    # persisted in _emm_notes.json (not written to the .ini file).
+    note: str = ""
+
+    NOTE_KEY_SEP = "::"
+
+    def note_key(self, mod_path: Path) -> str:
+        """Storage key for _emm_notes.json: ``relative/path::SectionName``."""
+        rel = self.source_file.relative_to(mod_path)
+        return f"{rel.as_posix()}{self.NOTE_KEY_SEP}{self.section_name}"
+
 
 @dataclass(frozen=True)
 class RuntimePersistAssignment:

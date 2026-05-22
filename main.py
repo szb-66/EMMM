@@ -31,6 +31,7 @@ from app.services import (
     ThumbnailService,
     DatabaseService,
     WorkflowService,
+    NoteService,
 )
 
 # Import utilities
@@ -113,6 +114,7 @@ def main():
         # Instantiate utility classes (can be passed as dependencies if needed).
         system_utils = SystemUtils()
         image_utils = ImageUtils()
+        note_service = NoteService()
 
         # Services that depend on other services.
         mod_service = ModService(
@@ -159,6 +161,7 @@ def main():
         foldergrid_vm=foldergrid_vm,
         sys_utils=system_utils,
         image_utils=image_utils,
+        note_service=note_service,
     )
     settings_vm = SettingsViewModel(
         config_service=config_service,

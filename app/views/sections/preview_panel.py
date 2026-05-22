@@ -108,7 +108,9 @@ class PreviewPanel(QWidget):
         self._bind_view_models()
 
     def _init_ui(self):
-        self.setStyleSheet("QLineEdit,QTextEdit,QComboBox,QSpinBox{min-width:0;}")
+        self.setStyleSheet(
+            "QLineEdit,QTextEdit,QComboBox,QSpinBox,QPushButton{min-width:0;}"
+        )
 
         root = QVBoxLayout(self)
         root.setContentsMargins(4, 4, 4, 4)
@@ -261,12 +263,7 @@ class PreviewPanel(QWidget):
 
         # ── title ───────────────────────────────────────────────────────────────
         full_title = item_data.get("actual_name", "N/A")
-        self.title_label.setToolTip(full_title)  # show full on hover
-        self.title_label.setText(
-            full_title[:20] + "…"  # ellipsis if >20
-            if len(full_title) > 20
-            else full_title
-        )
+        self.title_label.setText(full_title)
 
         # ── enable/disable switch (block signal to avoid feedback loop) ─────────
         with QSignalBlocker(self.status_switch):

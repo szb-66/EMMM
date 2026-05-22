@@ -1,0 +1,75 @@
+# Keybinding Notes
+
+Store and display human-readable notes/remarks for 3DMigoto keybindings.
+
+## Storage
+
+Notes are persisted in `_emm_notes.json` inside the mod root folder:
+
+```json
+{
+  "version": 1,
+  "keybinding_notes": {
+    "d3dx.ini::Key_ToggleOutfit": "切换泳装样式",
+    "misc/extra.ini::Key_FreeCam": "自由视角开关"
+  }
+}
+```
+
+### Key format
+
+`<relative_ini_path>::<section_name>`
+
+- `relative_ini_path`: INI 文件相对于 mod 文件夹的路径（使用 `/` 分隔符）
+- `section_name`: INI 中的 section 名，如 `Key_ToggleOutfit`
+- 分隔符 `::` 确保不会与合法 section 名冲突
+
+### File lifecycle
+
+- **不存在** → 视为空备注字典，不报错
+- **读取失败**（JSON 解析错误）→ 回退到空字典，日志警告
+- **保存** → 原子写入（先写临时文件再 rename）
+- **INI 文件改名/删除** → 对应备注 key 变成孤儿数据，不自动清理（可接受，极小体积）
+
+## Service
+
+`NoteService` in `app/services/note_service.py`:
+
+- `load_notes(mod_path: Path) -> dict[str, str]` — 加载该 mod 的所有备注
+- `save_notes(mod_path: Path, notes: dict[str, str])` — 完整写入
+- `update_note(mod_path: Path, key: str, note: str)` — 更新单条备注（加载 → 修改 → 保存）
+
+## Model
+
+`KeyBinding` dataclass 新增字段：
+
+```python
+@dataclass
+class KeyBinding:
+    ...
+    note: str = ""  # 用户备注，从 _emm_notes.json 加载
+```
+
+## UI
+
+KeyBindingWidget 新增**备注行**——独占一行，在 section header 下方、assignments 上方：
+
+```
+┌──────────────────────────────────────┐
+│ [Key_ToggleOutfit]        if: Scene  │
+│ 备注: [切换泳装样式________________] │  ← 独立备注行
+│ $dress:  [ComboBox ▼              ] │
+│ Key 1:   [home                    ] │
+└──────────────────────────────────────┘
+```
+
+- 编辑框为单行 `LineEdit`，与输入框一致的宽度策略（MinExpand）
+- 内容变化立即触发 `value_changed` 信号（通过 `on_keybinding_edited` 标记 dirty）
+- 空文本表示无备注
+- 备注保存在 `_emm_notes.json`，随 Save Configuration 一起保存（或独立保存机制）
+
+## Saving behavior
+
+- 备注变更标记 ini_dirty
+- 点击 "Save Configuration" 时一并写入 `_emm_notes.json`
+- 若仅有备注变更而无 INI 变更，依然需要触发保存（备注是 ini_dirty 的一部分）
