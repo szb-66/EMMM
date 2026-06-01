@@ -68,6 +68,9 @@ class PreviewPanelViewModel(QObject):
             []
         )  # A mutable list of KeyBinding objects for live edits
 
+        # --- INI parse cache: item_id → (keybindings, max_mtime) ---
+        self._ini_cache: dict[str, tuple[list[KeyBinding], float]] = {}
+
         # --- Thumbnail operation timeout protection ---
         self._thumbnail_op_timer = QTimer(self)
         self._thumbnail_op_timer.setSingleShot(True)
@@ -152,13 +155,34 @@ class PreviewPanelViewModel(QObject):
         else:
             self.item_loaded.emit(None)
 
-        # ── start async parsing (thread-pool) ─────────────────────────────────
+        # ── check INI cache ──────────────────────────────────────────────────────
+        folder_path = self.current_item_model.folder_path
+        ini_mtimes = [
+            p.stat().st_mtime
+            for p in folder_path.rglob("*.ini")
+            if p.is_file()
+        ]
+        current_max_mtime = max(ini_mtimes) if ini_mtimes else 0.0
+
+        cached = self._ini_cache.get(item_id)
+        if cached is not None:
+            cached_bindings, cached_mtime = cached
+            if current_max_mtime <= cached_mtime:
+                # Cache hit — use cached data directly, no worker needed
+                logger.info("INI cache hit for '%s'", self.current_item_model.actual_name)
+                self.editable_keybindings = cached_bindings
+                self.ini_config_loading.emit(False)
+                self._fill_notes_from_file()
+                self.original_keybindings = copy.deepcopy(self.editable_keybindings)
+                self.ini_config_ready.emit(self.editable_keybindings)
+                self.ini_dirty_state_changed.emit(False)
+                return
+
+        # ── start async parsing (thread-pool) ─────────────────────────────────────
         logger.info("Async ini-parsing for '%s'", self.current_item_model.actual_name)
         self.ini_config_loading.emit(True)  # show spinner
 
         # run new async loader in worker thread → no UI freeze
-        folder_path = self.current_item_model.folder_path
-
         # Find game root by walking up from the mod folder (most reliable)
         game_root_path = find_game_root_from_folder(folder_path)
 
@@ -230,8 +254,11 @@ class PreviewPanelViewModel(QObject):
         logger.info(
             f"PreviewPanel receiving external update for item:{new_item_model.actual_name}"
         )
+        # Invalidate INI cache if folder path changed (e.g. toggle added/removed DISABLED prefix)
+        if self.current_item_model and self.current_item_model.folder_path != new_item_model.folder_path:
+            self._ini_cache.pop(new_item_model.id, None)
         # Internal State Update
-        self.current_item = new_item_model
+        self.current_item_model = new_item_model
         view_dict = self._create_dict_from_item(new_item_model)
         self.item_loaded.emit(view_dict)
 
@@ -573,6 +600,20 @@ class PreviewPanelViewModel(QObject):
             # Save the original state for comparison when there is editing
             self.original_keybindings = copy.deepcopy(self.editable_keybindings)
 
+            # Populate INI cache
+            if self.current_item_model:
+                folder_path = self.current_item_model.folder_path
+                ini_mtimes = [
+                    p.stat().st_mtime
+                    for p in folder_path.rglob("*.ini")
+                    if p.is_file()
+                ]
+                current_max_mtime = max(ini_mtimes) if ini_mtimes else 0.0
+                self._ini_cache[self.current_item_model.id] = (
+                    self.editable_keybindings,
+                    current_max_mtime,
+                )
+
         self.ini_config_ready.emit(self.editable_keybindings)
         self.ini_dirty_state_changed.emit(False)
 
@@ -738,6 +779,10 @@ class PreviewPanelViewModel(QObject):
         self._unsaved_ini_changes = {}
         self._notes_dirty = False
         self.ini_dirty_state_changed.emit(False)
+
+        # Invalidate INI cache so next load re-parses fresh data
+        if self.current_item_model:
+            self._ini_cache.pop(self.current_item_model.id, None)
 
     def _on_thumbnail_added(self, result: dict):
         """Handles the result of the thumbnail addition operation."""

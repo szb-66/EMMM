@@ -96,6 +96,16 @@ Dynamic UI generated from `available_filters_changed` signal:
 ### Exclusive activation
 "Enable Only This" triggers confirmation `MessageBox` listing mods to be disabled → VM `proceed_with_exclusive_activation`.
 
+### Requirement: List panels reuse existing widgets on update
+
+When `items_updated` fires, `FoldergridPanel` and `ObjectlistPanel` SHALL reuse existing child widgets for items whose IDs appear in both the old and new lists. Widgets SHALL be destroyed only for removed items, and created only for added items. The panel SHALL NOT appear blank between updates.
+
+#### Scenario: Sort reorder reuses all widgets
+
+- **WHEN** `items_updated` emits a list containing the same item IDs in a different order
+- **THEN** no widgets SHALL be destroyed or created
+- **AND** existing widgets SHALL be repositioned to match the new order
+
 ## PreviewPanel
 
 [app/views/sections/preview_panel.py](app/views/sections/preview_panel.py)

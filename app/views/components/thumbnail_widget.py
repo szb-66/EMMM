@@ -1,9 +1,10 @@
 # app/views/components/thumbnail_widget.py
 
+from collections import OrderedDict
 from pathlib import Path
 from typing import List
 
-from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, QEvent, QSettings, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
     QContextMenuEvent,
@@ -37,7 +38,6 @@ from qfluentwidgets import (
     SubtitleLabel,
     TransparentPushButton,
     VBoxLayout,
-    PrimaryPushButton,
 )
 
 from app.viewmodels.preview_panel_vm import PreviewPanelViewModel
@@ -50,44 +50,82 @@ THUMB_WIDTH_MAX = 400
 
 
 class FullSizeImageDialog(QDialog):
-    """Dialog that displays an image at its natural size."""
+    """Non-modal dialog that displays an image with contain-fit scaling."""
 
     def __init__(self, pixmap: QPixmap, title: str = "", parent=None):
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle(f"Preview - {title}" if title else "Preview")
         self.setMinimumSize(400, 300)
 
+        self._original_pixmap = pixmap
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.PreventContextMenu
+        )
+        self.image_label.installEventFilter(self)
+        layout.addWidget(self.image_label)
 
-        label = QLabel()
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setPixmap(pixmap)
-        scroll.setWidget(label)
+        # Restore saved geometry or use default size
+        self._restore_geometry()
 
-        layout.addWidget(scroll)
+        # Apply initial contain-fit scaling
+        self._update_image()
 
-        # Close button bar
-        btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(12, 8, 12, 8)
-        close_btn = PrimaryPushButton(FluentIcon.CLOSE, "Close")
-        close_btn.clicked.connect(self.accept)
-        btn_bar.addStretch(1)
-        btn_bar.addWidget(close_btn)
-        btn_bar.addStretch(1)
-        layout.addLayout(btn_bar)
+    def _update_image(self):
+        """Scale the pixmap to fit the label, maintaining aspect ratio (contain)."""
+        if self._original_pixmap.isNull():
+            return
+        label_size = self.image_label.size()
+        if label_size.width() <= 0 or label_size.height() <= 0:
+            return
+        scaled = self._original_pixmap.scaled(
+            label_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.image_label.setPixmap(scaled)
 
-        # Size the dialog to fit the image (with a reasonable max)
-        img_size = pixmap.size()
-        max_w = 1200
-        max_h = 900
-        dlg_w = min(img_size.width() + 40, max_w)
-        dlg_h = min(img_size.height() + 80, max_h)
-        self.resize(int(dlg_w), int(dlg_h))
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_image()
+
+    def eventFilter(self, obj, event):
+        if obj is self.image_label and event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.RightButton:
+                self.close()
+                return True
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            self.close()
+        super().mousePressEvent(event)
+
+    def closeEvent(self, event):
+        self._save_geometry()
+        super().closeEvent(event)
+
+    def _save_geometry(self):
+        settings = QSettings("EMMM", "FullSizeImageDialog")
+        settings.setValue("geometry", self.saveGeometry())
+
+    def _restore_geometry(self):
+        settings = QSettings("EMMM", "FullSizeImageDialog")
+        geometry = settings.value("geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        else:
+            img_size = self._original_pixmap.size()
+            max_w = 1200
+            max_h = 900
+            dlg_w = min(img_size.width() + 40, max_w)
+            dlg_h = min(img_size.height() + 40, max_h)
+            self.resize(int(dlg_w), int(dlg_h))
 
 
 class ThumbnailGalleryLabel(QLabel):
@@ -151,7 +189,8 @@ class ThumbnailSliderWidget(QWidget):
         self._image_paths: List[Path] = []
         self._selected_index = 0
         self._thumb_labels: List[ThumbnailGalleryLabel] = []
-        self._pixmap_cache: dict[str, QPixmap] = {}
+        self._pixmap_cache: OrderedDict[str, QPixmap] = OrderedDict()
+        self._pixmap_cache_max = 200
 
         # Enable drag & drop for image files
         self.setAcceptDrops(True)
@@ -170,6 +209,7 @@ class ThumbnailSliderWidget(QWidget):
         content_layout = QVBoxLayout(self.main_content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(8)
+        self._content_layout = content_layout
 
         # Scroll area for horizontal gallery
         self.scroll_area = QScrollArea(self)
@@ -189,7 +229,7 @@ class ThumbnailSliderWidget(QWidget):
         self.gallery_layout.setSpacing(THUMB_SPACING)
         self.gallery_layout.addStretch(1)  # Push thumbnails to the left
         self.gallery_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
         )
 
         self.scroll_area.setWidget(self.gallery_widget)
@@ -275,44 +315,122 @@ class ThumbnailSliderWidget(QWidget):
         )
 
     def set_image_paths(self, image_paths: list[Path]):
-        """Receives a list of image paths and displays them in the gallery."""
-        self._image_paths = image_paths or []
-        self._selected_index = 0
+        """Receives a list of image paths and incrementally updates the gallery.
 
-        # Clear existing thumbnails
-        self._clear_gallery()
+        Only widgets for removed paths are destroyed; only new paths create
+        widgets.  Reused widgets keep their cached pixmap.  Full rebuild is
+        triggered only when switching to a completely different mod.
+        """
+        new_paths = image_paths or []
 
-        if not self._image_paths:
+        # ── Full clear ──────────────────────────────────────────────────────
+        if not new_paths:
+            self._clear_gallery()
+            self._image_paths = []
+            self._selected_index = 0
             self.stack.setCurrentWidget(self.null_state_widget)
             self._update_index_label()
             self.set_cover_button.setVisible(False)
+            self.updateGeometry()
             return
 
+        # ── Detect full mod switch (completely disjoint path sets) ──────────
+        old_str_set = {str(p) for p in self._image_paths}
+        new_str_set = {str(p) for p in new_paths}
+        is_mod_switch = bool(self._thumb_labels) and old_str_set.isdisjoint(new_str_set)
+
+        if is_mod_switch:
+            self._clear_gallery()
+            self._image_paths = new_paths
+            self._selected_index = 0
+            self._build_gallery()
+            return
+
+        # ── Incremental update ──────────────────────────────────────────────
         self.stack.setCurrentWidget(self.main_content_widget)
 
-        # Create thumbnail labels for each image
+        # Build lookup: str(p) → (index, ThumbnailGalleryLabel)
+        old_by_path: dict[str, tuple[int, ThumbnailGalleryLabel]] = {}
+        for i, (p, lbl) in enumerate(zip(self._image_paths, self._thumb_labels)):
+            old_by_path[str(p)] = (i, lbl)
+
+        # Build new widget list in correct order, reusing existing widgets
+        new_labels: list[ThumbnailGalleryLabel] = []
+        for i, p in enumerate(new_paths):
+            p_str = str(p)
+            if p_str in old_by_path:
+                _, lbl = old_by_path[p_str]
+                lbl.index = i
+                new_labels.append(lbl)
+            else:
+                label = ThumbnailGalleryLabel(p, i, self.gallery_widget)
+                label.clicked.connect(self._on_thumbnail_clicked)
+                label.doubleClicked.connect(self._on_thumbnail_double_clicked)
+                new_labels.append(label)
+
+        # Widgets that existed before but are no longer in the new list
+        widgets_to_remove = [
+            lbl
+            for p, lbl in zip(self._image_paths, self._thumb_labels)
+            if str(p) not in new_str_set
+        ]
+        for lbl in widgets_to_remove:
+            self.gallery_layout.removeWidget(lbl)
+            self._pixmap_cache.pop(str(lbl.image_path), None)  # evict deleted
+            lbl.deleteLater()
+
+        # Remove kept widgets from layout so we can re-insert in new order
+        for lbl in self._thumb_labels:
+            if lbl not in widgets_to_remove:
+                self.gallery_layout.removeWidget(lbl)
+
+        # Re-insert all widgets in correct order (before the trailing stretch)
+        for lbl in new_labels:
+            self.gallery_layout.insertWidget(
+                self.gallery_layout.count() - 1, lbl
+            )
+
+        # ── Update state ────────────────────────────────────────────────────
+        self._image_paths = new_paths
+        self._thumb_labels = new_labels
+        self._selected_index = 0
+
+        for lbl in new_labels:
+            lbl.set_selected(False)
+        if new_labels:
+            new_labels[0].set_selected(True)
+
+        self._update_thumb_sizes()
+        self._update_index_label()
+        self.updateGeometry()
+
+    def _build_gallery(self):
+        """Full gallery build from current self._image_paths (no cache clear)."""
         for i, path in enumerate(self._image_paths):
             label = ThumbnailGalleryLabel(path, i, self.gallery_widget)
             label.clicked.connect(self._on_thumbnail_clicked)
             label.doubleClicked.connect(self._on_thumbnail_double_clicked)
             self.gallery_layout.insertWidget(
                 self.gallery_layout.count() - 1, label
-            )  # Before stretch
+            )
             self._thumb_labels.append(label)
 
-        # Select the first thumbnail
         if self._thumb_labels:
             self._thumb_labels[0].set_selected(True)
 
         self._update_thumb_sizes()
         self._update_index_label()
+        self.updateGeometry()
 
     def _clear_gallery(self):
-        """Remove all thumbnail labels from the gallery layout."""
+        """Remove all thumbnail labels from the gallery layout (preserves pixmap cache)."""
         for label in self._thumb_labels:
             self.gallery_layout.removeWidget(label)
             label.deleteLater()
         self._thumb_labels.clear()
+
+    def clear_cache(self):
+        """Explicitly clear the in-memory pixmap cache (called when images are deleted)."""
         self._pixmap_cache.clear()
 
     def _update_thumb_sizes(self):
@@ -329,7 +447,13 @@ class ThumbnailSliderWidget(QWidget):
                 if pixmap.isNull():
                     label.setFixedSize(THUMB_WIDTH_MIN, THUMB_HEIGHT)
                     continue
+                # LRU: evict oldest if at capacity
+                if len(self._pixmap_cache) >= self._pixmap_cache_max:
+                    self._pixmap_cache.popitem(last=False)
                 self._pixmap_cache[cache_key] = pixmap
+            else:
+                # Mark as recently used (OrderedDict — move to end)
+                self._pixmap_cache.move_to_end(cache_key)
 
             # Calculate width from aspect ratio at fixed height
             w = int(THUMB_HEIGHT * pixmap.width() / pixmap.height())
@@ -360,7 +484,7 @@ class ThumbnailSliderWidget(QWidget):
             self.scroll_area.ensureWidgetVisible(self._thumb_labels[index])
 
     def _on_thumbnail_double_clicked(self, index: int):
-        """Open a full-size viewer for the double-clicked image."""
+        """Open a non-modal full-size viewer for the double-clicked image."""
         if index < 0 or index >= len(self._image_paths):
             return
         path = self._image_paths[index]
@@ -368,15 +492,34 @@ class ThumbnailSliderWidget(QWidget):
         if pixmap.isNull():
             return
 
-        dialog = FullSizeImageDialog(
-            pixmap, title=path.name, parent=self.window()
-        )
-        dialog.exec()
+        # Close existing dialog if any
+        if hasattr(self, '_full_size_dialog') and self._full_size_dialog is not None:
+            try:
+                self._full_size_dialog.close()
+            except RuntimeError:
+                pass
+
+        dialog = FullSizeImageDialog(pixmap, title=path.name)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.show()
+        self._full_size_dialog = dialog
 
     def resizeEvent(self, event: QResizeEvent):
         """Recalculate thumbnail sizes when the widget is resized."""
         super().resizeEvent(event)
         self._update_thumb_sizes()
+
+    def sizeHint(self):
+        """Return a height that accommodates the full thumbnail row."""
+        if not self._image_paths:
+            return super().sizeHint()
+        gm = self.gallery_layout.contentsMargins()
+        h = THUMB_HEIGHT + gm.top() + gm.bottom()  # gallery area
+        cl = self._content_layout
+        if cl:
+            h += cl.spacing()  # gap between gallery and controls
+        h += 30  # estimated control bar height
+        return QSize(400, h)
 
     def _update_index_label(self):
         total = len(self._image_paths)

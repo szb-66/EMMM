@@ -215,11 +215,45 @@ Disable-time source synchronization SHALL preserve existing `.ini` write safety 
 
 **Responsibility:** Watch directories for external filesystem changes and notify via Qt signals.
 
-- Uses `watchdog.Observer` with non-recursive watches
+- Uses `watchdog.Observer` with recursive watches
 - Maps string keys (`"objectlist"`, `"foldergrid"`) to watched paths
-- Filters out `opened`/`closed` events
-- Supports suppression tokens for internal-change filtering
+- Filters out `opened`/`closed` events, directory-creation events, and directory-modified events
+- Supports `ignore_patterns` per-key to filter out internal metadata writes (e.g., `**/info.json`, `**/properties.json`)
+- Supports suppression tokens for internal-change filtering; suppressed events are silently dropped
 - `directory_changed` signal: `(key: str, changed_path: Path)`
+
+### Requirement: FileWatcherService directory watching
+
+`FileWatcherService` SHALL monitor directories using `watchdog.Observer` with recursive watches and emit `directory_changed(key, changed_path)` via Qt signals for filesystem events. When a watch key is suppressed via `suppress_watch(key, duration_ms)`, all events for that key SHALL be silently dropped for the suppression duration. No events SHALL be queued or replayed when suppression expires.
+
+#### Scenario: Suppressed events are dropped silently
+
+- **WHEN** a watch key has an active suppression token
+- **AND** a filesystem event occurs in the watched directory
+- **THEN** the event SHALL be dropped without queuing
+- **AND** no `directory_changed` signal SHALL be emitted for the suppressed event after suppression expires
+
+#### Scenario: Events after suppression expire are processed normally
+
+- **WHEN** a watch key's suppression token expires
+- **AND** a new filesystem event occurs in the watched directory
+- **THEN** `directory_changed` SHALL be emitted normally for the new event
+
+#### Scenario: Deleting nested subfolder triggers refresh
+
+- **WHEN** a mod folder contains a subdirectory and the user deletes that subdirectory via Windows Explorer
+- **THEN** FileWatcherService SHALL emit `directory_changed` with the key for the watched directory
+- **AND** the UI SHALL refresh to reflect the deletion
+
+### Requirement: ModService toggle status returns updated model
+
+When a single item's status is toggled, `ModService` SHALL return the updated item model in the result dict under the `data` key. The caller SHALL update the item in its internal lists in-place without triggering a full directory re-scan.
+
+#### Scenario: Toggling one mod returns complete model
+
+- **WHEN** `toggle_status` succeeds for a single item
+- **THEN** the result dict SHALL include a `data` key containing the updated `BaseModItem` model
+- **AND** the model SHALL have the new `folder_path` and `status` fields
 
 ## PersistUtils
 

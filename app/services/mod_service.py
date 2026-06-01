@@ -113,8 +113,12 @@ class ModService:
 
                     # 2. Generate a stable, unique ID using relative path and SHA1
                     relative_path = item_path.relative_to(path)
+                    # Include the parent path context to prevent hash collisions
+                    # when same-named folders exist under different parent directories
+                    # (e.g., character "妮可" exists in both GIMI and ZZMI games).
+                    id_input = f"{path.as_posix()}/{relative_path.as_posix()}"
                     item_id = hashlib.sha1(
-                        relative_path.as_posix().encode("utf-8")
+                        id_input.encode("utf-8")
                     ).hexdigest()
 
                     # 3. Create the appropriate skeleton model based on context
@@ -1219,7 +1223,30 @@ class ModService:
             self._write_json(props_path, properties)
 
             logger.info(f"Successfully updated object '{new_name}'.")
-            return {"success": True, "item_id": item.id}
+            # Build the updated in-memory model so callers can do a
+            # targeted UI update instead of a full directory rescan.
+            update_fields = {"folder_path": current_path, "actual_name": new_name}
+            if "object_type" in update_data:
+                update_fields["object_type"] = ModType(update_data["object_type"])
+            if "rarity" in update_data:
+                update_fields["rarity"] = update_data["rarity"]
+            if "element" in update_data:
+                update_fields["element"] = update_data["element"]
+            if "gender" in update_data:
+                update_fields["gender"] = update_data["gender"]
+            if "weapon" in update_data:
+                update_fields["weapon"] = update_data["weapon"]
+            if "subtype" in update_data:
+                update_fields["subtype"] = update_data["subtype"]
+            if "tags" in update_data:
+                update_fields["tags"] = update_data["tags"]
+            if "thumbnail_path" in properties:
+                thumb = properties["thumbnail_path"]
+                update_fields["thumbnail_path"] = (
+                    current_path / thumb if thumb else None
+                )
+            updated_item = dataclasses.replace(item, **update_fields)
+            return {"success": True, "item_id": item.id, "data": updated_item}
 
         except Exception as e:
             error_msg = f"Failed to update object '{item.actual_name}': {e}"

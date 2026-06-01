@@ -38,7 +38,7 @@ The gallery SHALL maintain the current image selection concept — clicking a th
 #### Scenario: Remove deletes selected image
 - **WHEN** the user clicks the remove button while a thumbnail is selected
 - **THEN** the selected image SHALL be removed after confirmation
-- **AND** the gallery SHALL refresh to show the remaining images
+- **AND** the gallery SHALL update incrementally without rebuilding unaffected thumbnails
 
 ### Requirement: User can set current image as cover
 The gallery SHALL provide a "Set as Cover" button that promotes the selected/current image to the first position in `preview_images`, making it the mod's cover thumbnail in the foldergrid.
@@ -47,7 +47,7 @@ The gallery SHALL provide a "Set as Cover" button that promotes the selected/cur
 - **WHEN** the user clicks the "Set as Cover" button on the third image
 - **THEN** that image SHALL move to index 0 in `preview_images`
 - **AND** the foldergrid thumbnail SHALL update to show the new cover image
-- **AND** the gallery SHALL refresh to reflect the new order
+- **AND** the gallery SHALL reorder existing widgets in-place without destroying or recreating them
 
 #### Scenario: Set as cover button visibility
 - **WHEN** there are at least 2 preview images

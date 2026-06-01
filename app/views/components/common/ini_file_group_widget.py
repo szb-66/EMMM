@@ -28,15 +28,15 @@ class IniFileGroupWidget(QFrame):
 
     # app/views/components/ini_file_group_widget.py
     def _init_ui(self, title: str) -> None:
-        self.setObjectName("This is a group file")
+        self.setObjectName("IniFileGroup")
         self.setStyleSheet(
             """
             #IniFileGroup {
-                min-width: 0;
+                background-color: rgba(255, 255, 255, 0.03);
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 6px;
             }
-            QWidget, QFrame, QLabel { min-width: 0; }
+            #IniFileGroup QWidget, #IniFileGroup QFrame, #IniFileGroup QLabel { min-width: 0; }
             """
         )
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -81,11 +81,16 @@ class IniFileGroupWidget(QFrame):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
         self.content_layout = VBoxLayout(content)
-        self.content_layout.setContentsMargins(8, 4, 8, 8)
-        self.content_layout.setSpacing(6)
+        self.content_layout.setContentsMargins(8, 8, 8, 12)
+        self.content_layout.setSpacing(10)
         main.addWidget(content)
 
     # ──────────────────────────────────────────────────────────────────────────
     def add_binding_widget(self, widget: QWidget) -> None:
-        """Add keybindingwidget to the content area."""
+        """Add keybinding widget with a visual separator before it (except the first)."""
+        if self.content_layout.count() > 0:
+            sep = QFrame(self)
+            sep.setFixedHeight(1)
+            sep.setStyleSheet("background-color: rgba(255,255,255,0.08); border: none;")
+            self.content_layout.addWidget(sep)
         self.content_layout.addWidget(widget)

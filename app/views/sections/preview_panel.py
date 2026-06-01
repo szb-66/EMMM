@@ -102,6 +102,7 @@ class PreviewPanel(QWidget):
     ):
         super().__init__(parent)
         self.view_model = viewmodel
+        self._displayed_item_id: str | None = None
 
         self._ini_group_widgets = []
         self._init_ui()
@@ -151,9 +152,8 @@ class PreviewPanel(QWidget):
         # ── thumbnail ────────────────────────────────────────────────────────────
         vbox.addWidget(StrongBodyLabel("Preview Images"))
         self.thumbnail_slider = ThumbnailSliderWidget(self.view_model)
-        self.thumbnail_slider.setMinimumHeight(178)
         self.thumbnail_slider.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
         )
         vbox.addWidget(self.thumbnail_slider)
 
@@ -193,7 +193,7 @@ class PreviewPanel(QWidget):
         )
         self.ini_config_layout = QVBoxLayout(cfg_wrap)
         self.ini_config_layout.setContentsMargins(0, 0, 0, 0)
-        self.ini_config_layout.setSpacing(10)
+        self.ini_config_layout.setSpacing(4)
         vbox.addWidget(cfg_wrap)
 
         self.save_config_button = PrimaryPushButton(
@@ -247,10 +247,23 @@ class PreviewPanel(QWidget):
     # --- SLOTS (Responding to ViewModel Signals) ---
 
     def _on_item_loaded(self, item_data: dict | None) -> None:
-        """Refresh whole panel with selected‐item data."""
+        """Load item data into the panel, using lightweight update when the same
+        item re-emits (e.g. toggle modified only the status/title)."""
+        new_id = item_data.get("id") if item_data else None
+
+        # ── lightweight update: same item, only status/title may have changed ──
+        if new_id and new_id == self._displayed_item_id:
+            full_title = item_data.get("actual_name", "N/A")
+            self.title_label.setText(full_title)
+            with QSignalBlocker(self.status_switch):
+                self.status_switch.setChecked(item_data.get("is_enabled", False))
+            return
+
+        # ── full clear ─────────────────────────────────────────────────────────
         self.clear_panel()
 
         if not item_data:
+            self._displayed_item_id = None
             return
 
         # ── show main content ────────────────────────────────────────────────────
@@ -276,6 +289,9 @@ class PreviewPanel(QWidget):
         desc = item_data.get("description", "")
         self.description_editor.setText(desc)
         self.save_description_button.hide()
+
+        # ── track displayed item ────────────────────────────────────────────────
+        self._displayed_item_id = new_id
 
     def _on_ini_config_ready(self, keybindings: list[KeyBinding]) -> None:
         """Populate ini-config panel dengan group per‐file, no overlap."""
@@ -392,6 +408,7 @@ class PreviewPanel(QWidget):
 
     def clear_panel(self):
         """Clears all displayed data from the panel."""
+        self._displayed_item_id = None
         self.stack.setCurrentWidget(self.empty_view)
         if self.thumbnail_slider:
             self.thumbnail_slider.set_image_paths([])

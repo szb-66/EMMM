@@ -77,9 +77,24 @@ ViewModels manage panel state, coordinate data flow between Views and Services, 
 - Sort: score → is_pinned → is_enabled → name
 
 ### Item operations
-All follow the same pattern: guard (`_processing_ids` check) → Worker → result slot → state update → signal:
+
+All item operations follow the same pattern: guard (`_processing_ids` check) → Worker → result slot → state update → re-sort → signal.
+
+Operations that change an item's sort key (status toggle, pin toggle) MUST call `apply_filters_and_search()` in their result slot to immediately re-sort the displayed list without waiting for a filesystem event.
+
 - `toggle_item_status`, `toggle_pin_status`, `rename_item`, `delete_item`
 - `convert_object_type`, `update_object_item`, `initiate_sync_for_item`
+
+### Requirement: Toggle status applies sort immediately
+
+The system SHALL re-sort the displayed item list immediately after a status toggle completes, using the in-memory `apply_filters_and_search()` method. The sort SHALL complete without triggering a directory scan (`load_items`).
+
+#### Scenario: Toggle status re-sorts the list without directory scan
+
+- **WHEN** a foldergrid item's status is toggled via `toggle_item_status` and the background worker returns success
+- **THEN** `_on_toggle_status_finished` SHALL call `apply_filters_and_search()` after updating the item in `master_list` and `displayed_items`
+- **AND** the displayed list SHALL re-sort with the "enabled first, then disabled, then alphabetical" rule applied
+- **AND** the sort SHALL NOT trigger `load_items` or `os.scandir`
 
 ### Reconciliation
 - `get_reconciliation_preview()`: Dry-run match counts without executing

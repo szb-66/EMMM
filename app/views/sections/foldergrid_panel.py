@@ -268,15 +268,29 @@ class FolderGridPanel(QWidget):
 
     def _on_items_updated(self, items_data: list[dict], item_id_to_select: str | None = None):
         """
-        Flow 2.3: Repopulates the entire grid view with new skeleton items.
+        Flow 2.3: Updates the grid view by reusing existing widgets when possible.
+        Only creates/destroys widgets for items that were added/removed.
         """
         logger.debug(f"Received {len(items_data)} items to display in foldergrid.")
 
-        self.grid_widget.clear_items()
-        self._item_widgets.clear()
+        # --- compute diff sets ---
+        new_ids = {item["id"] for item in items_data}
+        old_ids = set(self._item_widgets.keys())
+        removed_ids = old_ids - new_ids
+        kept_ids = old_ids & new_ids
 
-        # Grid has been cleaned in _on_loading_started
+        # --- detach all widgets from layout (they survive) ---
+        self.grid_widget.clear_items()
+
+        # --- destroy stale widgets ---
+        for rid in removed_ids:
+            widget = self._item_widgets.pop(rid, None)
+            if widget:
+                widget.deleteLater()
+
+        # --- show appropriate view ---
         if not items_data:
+            self._item_widgets.clear()
             return
 
         self.stack.setCurrentWidget(self.scroll_area)
@@ -284,21 +298,25 @@ class FolderGridPanel(QWidget):
         item_to_select_data = None
 
         for item_data in items_data:
-            # 1. Create the card widget
-            widget = FolderGridItemWidget(
-                item_data=item_data,
-                viewmodel=self.view_model,
-            )
+            item_id = item_data["id"]
 
-            # 2. Connect its signals
-            widget.item_selected.connect(self._on_grid_item_selected)
-            widget.item_selected.connect(self.item_selected)
+            if item_id in kept_ids:
+                # Reuse existing widget, update its data
+                widget = self._item_widgets[item_id]
+                widget.set_data(item_data)
+            else:
+                # Create new widget for added item
+                widget = FolderGridItemWidget(
+                    item_data=item_data,
+                    viewmodel=self.view_model,
+                )
+                widget.item_selected.connect(self._on_grid_item_selected)
+                widget.item_selected.connect(self.item_selected)
+                self._item_widgets[item_id] = widget
 
             self.grid_widget.add_widget(widget)
-            self._item_widgets[item_data["id"]] = widget
 
-            # Track which widget to auto-select
-            if item_id_to_select is not None and item_data["id"] == item_id_to_select:
+            if item_id_to_select is not None and item_id == item_id_to_select:
                 item_to_select_data = item_data
 
         # Auto-select the intended item (triggers preview panel update)

@@ -80,6 +80,20 @@ class MainWindowViewModel(QObject):
         self._watch_debounce_timers: dict[str, QTimer] = {}
         self._watch_suppression_tokens: dict[str, int] = {}
         self._file_watcher.directory_changed.connect(self._on_watched_directory_changed)
+
+        # Ignore internal metadata / content writes so they don't trigger
+        # full list refreshes.  List structure only changes on folder-level
+        # events (create / delete / rename), not file-level writes.
+        self._file_watcher.ignore_patterns(
+            "objectlist",
+            ["**/info.json", "**/properties.json", "**/_thumb.*",
+             "**/preview*.*", "**/*.ini"],
+        )
+        self._file_watcher.ignore_patterns(
+            "foldergrid",
+            ["**/info.json", "**/properties.json", "**/_thumb.*",
+             "**/preview*.*", "**/*.ini"],
+        )
         self._connect_child_vm_signals()
 
     # ---Initialization ---
@@ -620,7 +634,6 @@ class MainWindowViewModel(QObject):
         logger.debug(f"Detected filesystem change for {key}: {changed_path}")
 
         if self._watch_suppression_tokens.get(key, 0):
-            logger.debug(f"Ignoring internal filesystem change for {key}: {changed_path}")
             return
 
         timer = self._watch_debounce_timers.get(key)

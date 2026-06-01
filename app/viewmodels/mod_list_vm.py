@@ -1054,7 +1054,11 @@ class ModListViewModel(QObject):
 
             logger.info(f"Successfully toggled status for item: {new_item.actual_name}")
 
-            # 4. Emit signals to UI for updates (the rest of the logic is the same).
+            # 4. Re-sort the displayed list so the "enabled first" rule takes
+            #    effect immediately, without waiting for a filesystem event.
+            self.apply_filters_and_search()
+
+            # 5. Emit signals to UI for updates (the rest of the logic is the same).
             self.item_needs_update.emit(self._create_dict_from_item(new_item))
             self.item_processing_finished.emit(item_id, True)
 
@@ -1739,6 +1743,7 @@ class ModListViewModel(QObject):
     def _on_update_finished(self, result: dict):
         """
         [NEW] Handles the result of the object update operation.
+        Uses a targeted item update instead of a full list reload.
         """
         item_id = result.get("item_id")
         if not item_id: return
@@ -1747,12 +1752,25 @@ class ModListViewModel(QObject):
         self.item_processing_finished.emit(item_id, result.get("success", False))
 
         if result.get("success"):
-            self.toast_requested.emit("Object updated successfully.", "success")
-            # Request a full refresh to ensure the UI is in sync
-            self.thumbnail_service.invalidate_cache(item_id)
-            self.toast_requested.emit("Object updated successfully.", "success")
+            updated_item = result.get("data")
+            if updated_item:
+                self.update_item_in_list(updated_item)
+                self.toast_requested.emit("Object updated successfully.", "success")
+                self.thumbnail_service.invalidate_cache(item_id)
+                # Trigger single-item UI refresh, not a full list rebuild.
+                self.item_needs_update.emit(self._create_dict_from_item(updated_item))
+                # Domino: if the updated item is the active object, notify listeners.
+                if self.context == CONTEXT_OBJECTLIST and self.last_selected_item_id == item_id:
+                    self.active_object_modified.emit(updated_item)
+                return
+            # Fallback: if data is missing, do a full refresh.
+            logger.warning(
+                "Update succeeded but returned no item model. Falling back to full refresh."
+            )
             self.list_refresh_requested.emit()
-        else:
+            return
+
+        if not result.get("success"):
             self.toast_requested.emit(f"Update failed: {result.get('error')}", "error")
 
     def _on_generic_worker_error(self, item_id: str, error_info: tuple, action: str):

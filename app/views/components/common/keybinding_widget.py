@@ -1,11 +1,9 @@
 # app/views/components/keybinding_widget.py
 
 from typing import List, Dict
-from pathlib import Path
 
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QFormLayout,
     QVBoxLayout,
     QWidget,
     QFrame,
@@ -19,19 +17,18 @@ from qfluentwidgets import (
     ComboBox,
     StrongBodyLabel,
     CaptionLabel,
-    VBoxLayout,
     SpinBox,
-    FlowLayout,
-    FluentIcon,
 )
 
 from app.services.Iniparsing_service import KeyBinding, Assignment
 
 # ---------- constants ----------
-ROW_MARGINS = (4, 0, 4, 0)
-HEADER_MARGIN = (4, 8, 4, 8)
-SPACING_V = 8
+ROW_MARGINS = (0, 0, 0, 0)
+HEADER_MARGIN = (0, 0, 4, 0)
+SPACING_V = 6
 FIELD_STRETCH = 3  # label:field proportion when space is plentiful
+CARD_PADDING = 12
+SECTION_SPACING = 8
 
 
 class KeyBindingWidget(QWidget):
@@ -55,23 +52,49 @@ class KeyBindingWidget(QWidget):
         self._connect_signals()
 
     def _init_ui(self) -> None:
-        """Build widget UI – vertical list, label-left field-right, fluent widgets."""
-        # global
+        """Build widget UI – card-style with background, padding, and visual hierarchy."""
+        # ── card styling ──────────────────────────────────────────────────────────
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setStyleSheet("QLineEdit,QComboBox,QSpinBox{min-width:0;}")
+        self.setStyleSheet("""
+            KeyBindingWidget {
+                background-color: rgba(255, 255, 255, 0.10);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+            }
+            KeyBindingWidget:hover {
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                background-color: rgba(255, 255, 255, 0.14);
+            }
+            KeyBindingWidget QLineEdit, KeyBindingWidget QSpinBox {
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                padding: 2px 6px;
+                min-width: 0;
+            }
+        """)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(SPACING_V)
+        root.setContentsMargins(CARD_PADDING, CARD_PADDING, CARD_PADDING, CARD_PADDING)
+        root.setSpacing(SECTION_SPACING)
 
         # ── header ────────────────────────────────────────────────────────────────
-        header = QHBoxLayout()
-        header.setContentsMargins(*HEADER_MARGIN)
-        header.addWidget(StrongBodyLabel(self.binding_data.section_name))
-        header.addStretch(1)
+        header = QWidget()
+        header.setStyleSheet("background: transparent; border: none;")
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(*HEADER_MARGIN)
+        h_layout.setSpacing(8)
+
+        section_label = StrongBodyLabel(self.binding_data.section_name)
+        h_layout.addWidget(section_label)
+        h_layout.addStretch(1)
+
         if self.binding_data.condition:
-            header.addWidget(CaptionLabel(f"if: {self.binding_data.condition}"))
-        root.addLayout(header)
+            cond_label = CaptionLabel(f"if: {self.binding_data.condition}")
+            cond_label.setStyleSheet("background: transparent; border: none;")
+            h_layout.addWidget(cond_label)
+
+        root.addWidget(header)
 
         # ── note row ──────────────────────────────────────────────────────────────
         self.note_edit = LineEdit()
@@ -80,25 +103,42 @@ class KeyBindingWidget(QWidget):
         root.addLayout(self._create_row("Note", self.note_edit))
 
         # ── assignments ───────────────────────────────────────────────────────────
-        for a in self.binding_data.assignments:
-            field = self._create_smart_input(a)
-            self.assignment_widgets[a.variable] = field
-            root.addLayout(self._create_row(a.variable, field))
+        if self.binding_data.assignments:
+            assignment_section = QWidget()
+            assignment_section.setStyleSheet("background: transparent; border: none;")
+            as_layout = QVBoxLayout(assignment_section)
+            as_layout.setContentsMargins(0, 0, 0, 0)
+            as_layout.setSpacing(SPACING_V)
+
+            for a in self.binding_data.assignments:
+                field = self._create_smart_input(a)
+                self.assignment_widgets[a.variable] = field
+                as_layout.addLayout(self._create_row(a.variable, field))
+
+            root.addWidget(assignment_section)
 
         # ── triggers (keys / backs) ───────────────────────────────────────────────
         if self.binding_data.keys or self.binding_data.backs:
             if self.binding_data.assignments:
                 root.addWidget(self._hline())
 
-            for i, val in enumerate(self.binding_data.keys, 1):
+            trigger_section = QWidget()
+            trigger_section.setStyleSheet("background: transparent; border: none;")
+            tr_layout = QVBoxLayout(trigger_section)
+            tr_layout.setContentsMargins(0, 0, 0, 0)
+            tr_layout.setSpacing(SPACING_V)
+
+            for val in self.binding_data.keys:
                 edit = self._line_edit(val)
                 self.key_edits.append(edit)
-                root.addLayout(self._create_row(f"Key", edit))
+                tr_layout.addLayout(self._create_row("Key", edit))
 
-            for i, val in enumerate(self.binding_data.backs, 1):
+            for val in self.binding_data.backs:
                 edit = self._line_edit(val)
                 self.back_edits.append(edit)
-                root.addLayout(self._create_row(f"Back", edit))
+                tr_layout.addLayout(self._create_row("Back", edit))
+
+            root.addWidget(trigger_section)
 
         self.setLayout(root)
 
@@ -107,10 +147,11 @@ class KeyBindingWidget(QWidget):
         """Return HBox: [label][field] with field taking extra space."""
         row = QHBoxLayout()
         row.setContentsMargins(*ROW_MARGINS)
-        row.setSpacing(6)
+        row.setSpacing(8)
 
         lbl = BodyLabel(f"{text}:")
         lbl.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        lbl.setStyleSheet("background: transparent; border: none; color: rgba(255,255,255,0.7);")
 
         field.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
@@ -127,38 +168,16 @@ class KeyBindingWidget(QWidget):
         ln = QFrame()
         ln.setFrameShape(QFrame.Shape.HLine)
         ln.setFrameShadow(QFrame.Shadow.Sunken)
+        ln.setStyleSheet("background: transparent; border: none;")
         return ln
-
-    def _create_assignment_row(self, assignment: Assignment) -> QWidget:
-        """Row: [label][field] with field taking extra space."""
-        container = QWidget(self)
-        container.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-        )
-
-        row = QHBoxLayout()
-        row.setContentsMargins(*ROW_MARGINS)
-        row.setSpacing(SPACING_V)
-
-        lbl = BodyLabel(f"{assignment.variable}:")
-        lbl.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-        row.addWidget(lbl)
-
-        field = self._create_smart_input(assignment)
-        field.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        self.assignment_widgets[assignment.variable] = field
-        row.addWidget(field, FIELD_STRETCH)
-
-        container.setLayout(row)
-        return container
 
     def _create_smart_input(self, assignment: Assignment) -> QWidget:
         """ComboBox with cycle_options, compressible in narrow panels."""
 
         cb = ComboBox(self)
         cb.setStyleSheet(
-            "QComboBox{min-width:0; padding:2px 4px;}"
-            "QComboBox::drop-down{width:16px;}"
+            "QComboBox{min-width:0; padding:2px 6px; background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;}"
+            "QComboBox::drop-down{width:16px; border:none;}"
         )
         cb.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         if assignment.cycle_options:
@@ -168,38 +187,6 @@ class KeyBindingWidget(QWidget):
             or (assignment.cycle_options[0] if assignment.cycle_options else "")
         )
         return cb
-
-    def _create_trigger_row(
-        self,
-        parent_layout: QVBoxLayout,
-        label: str,
-        values: list[str],
-        widget_list: list[LineEdit],
-    ) -> None:
-        """Add trigger rows ke parent_layout."""
-
-        for idx, val in enumerate(values, 1):
-            row = QWidget(self)
-            row.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-            )
-
-            h = QHBoxLayout()
-            h.setContentsMargins(*ROW_MARGINS)
-            h.setSpacing(SPACING_V)
-
-            cap = CaptionLabel(f"{label} {idx}:")
-            cap.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-            h.addWidget(cap)
-
-            edit = LineEdit(self)
-            edit.setText(val)
-            edit.setStyleSheet("min-width:0;")
-            widget_list.append(edit)
-            h.addWidget(edit, FIELD_STRETCH)
-
-            row.setLayout(h)
-            parent_layout.addWidget(row)
 
     def _connect_signals(self):
         self.note_edit.textChanged.connect(
