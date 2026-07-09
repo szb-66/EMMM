@@ -8,6 +8,7 @@ import patoolib
 import tempfile
 import hashlib
 import dataclasses
+import zipfile
 from pathlib import Path
 from typing import Tuple, List
 from app.utils.system_utils import SystemUtils
@@ -1276,6 +1277,34 @@ class ModService:
                 return False # Stop searching on error
         return False # No .ini file found within the depth limit
 
+    def _archive_has_ini(self, path: Path) -> bool:
+        """
+        [HELPER] Detects whether an archive contains any .ini file *without*
+        extracting it. For ZIP-family containers we use the stdlib zipfile
+        namelist (instant, no subprocess). For other formats (rar, 7z, tar,
+        etc.) we deliberately return False to avoid the heavyweight
+        extract-to-temp probing that previously blocked the UI thread on
+        large archives — the caller will fall back to the has_ini_warning
+        toast, which is a benign UX hint, not a correctness gate.
+        """
+        suffix = path.suffix.lower()
+        try:
+            if suffix == ".zip" or suffix in {".jar", ".whl", ".apk"}:
+                with zipfile.ZipFile(path, "r") as zf:
+                    for name in zf.namelist():
+                        if name.lower().endswith(".ini"):
+                            return True
+                return False
+        except (zipfile.BadZipFile, OSError) as e:
+            logger.warning(f"Cannot read zip namelist for '{path.name}': {e}")
+            return False
+
+        # Non-zip formats: skip probing to keep analyze fast and crash-safe.
+        logger.debug(
+            f"Skipping .ini probing for non-zip archive '{path.name}' (suffix={suffix})."
+        )
+        return False
+
     def analyze_source_path(self, path: Path) -> dict:
         """
         [NEW] Performs a quick, non-blocking analysis of a source path
@@ -1297,15 +1326,11 @@ class ModService:
             elif path.is_file() and patoolib.is_archive(str(path)):
                 is_valid = True
                 proposed_name = path.stem # Name without extension
-                # Safely extract to a temporary directory to check for .ini files
-                with tempfile.TemporaryDirectory(prefix="EMM_analyze_") as temp_dir:
-                    temp_path = Path(temp_dir)
-                    patoolib.extract_archive(str(path), outdir=str(temp_path), verbosity=-1)
-
-                    # Check for .ini files in the extracted contents
-                    if not self._find_ini_recursively(temp_path, max_depth=5):
-                        has_ini_warning = True
-                # The temporary directory is automatically cleaned up here
+                # Probe for .ini WITHOUT extracting the whole archive.
+                # Full extraction here used to block the worker thread for
+                # large/password-protected archives and could crash the app.
+                if not self._archive_has_ini(path):
+                    has_ini_warning = True
             else:
                 error_message = "Unsupported file type."
 
@@ -1324,10 +1349,18 @@ class ModService:
             "error_message": error_message,
         }
 
-    def create_mod_from_source(self, source_path: Path, output_name: str, parent_path: Path, cancel_flag: List[bool]) -> dict:
+    def create_mod_from_source(self, source_path: Path, output_name: str, parent_path: Path, cancel_flag: List[bool], password: str | None = None) -> dict:
         """
         [NEW] Creates a new mod folder by either copying a directory or
         extracting an archive. This operation is cancellable.
+
+        Parameters
+        ----------
+        password : str | None
+            Optional password forwarded to patoolib for encrypted archives.
+            When provided and the backend cannot satisfy it, a
+            ``password_required`` status is returned so the caller can
+            prompt the user.
         """
         if cancel_flag:
             return {"status": "cancelled"}
@@ -1351,7 +1384,16 @@ class ModService:
                     temp_path = Path(temp_dir)
 
                     # 1. Initial Extraction (This will catch password errors)
-                    patoolib.extract_archive(str(source_path), outdir=str(temp_path), verbosity=-1, interactive=False)
+                    #    interactive=False keeps the worker thread from
+                    #    blocking on a TTY prompt for missing passwords;
+                    #    password kw (when provided) is forwarded to patoolib.
+                    patoolib.extract_archive(
+                        str(source_path),
+                        outdir=str(temp_path),
+                        verbosity=-1,
+                        interactive=False,
+                        password=password,
+                    )
 
                     # 2. Analyze the contents of the temporary directory
                     extracted_contents = os.listdir(temp_path)

@@ -562,16 +562,57 @@ class FolderGridPanel(QWidget):
 
     def dragEnterEvent(self, event):
         """Accepts drags that contain local file paths."""
-        if event.mimeData().hasUrls():
-            # Check if all URLs are local files/folders
-            if all(url.isLocalFile() for url in event.mimeData().urls()):
+        try:
+            urls = event.mimeData().urls()
+            if not urls:
+                event.ignore()
+                return
+            # Only accept the drag when at least one URL resolves to a real
+            # local file path. Some virtual MIME sources (browser, special
+            # folders) advertise hasUrls() but produce empty toLocalFile().
+            if any(url.isLocalFile() and url.toLocalFile() for url in urls):
                 event.acceptProposedAction()
+            else:
+                event.ignore()
+        except Exception:
+            # Swallow any unexpected MIME parsing errors so a malformed drag
+            # never crashes the app.
+            event.ignore()
 
     def dropEvent(self, event):
         """Handles dropped files/folders by sending their paths to the ViewModel."""
-        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls()]
-        logger.info(f"User dropped {len(paths)} item(s).")
-        self.view_model.prepare_creation_tasks(paths)
+        try:
+            paths = []
+            for url in event.mimeData().urls():
+                try:
+                    local = url.toLocalFile()
+                except Exception:
+                    continue
+                if not local:
+                    continue
+                p = Path(local)
+                # Skip non-existent paths silently. An unsupported file (e.g.
+                # a non-archive) will be reported by analyze_source_path as
+                # "Unsupported file type." rather than crashing here.
+                if not p.exists():
+                    logger.warning(f"Skipping dropped non-existent path: {local}")
+                    continue
+                paths.append(p)
+
+            if not paths:
+                logger.warning("Drop discarded: no valid local paths in MIME data.")
+                self.view_model.toast_requested.emit(
+                    "Cannot drop: no valid files or folders detected.", "warning"
+                )
+                return
+
+            logger.info(f"User dropped {len(paths)} item(s).")
+            self.view_model.prepare_creation_tasks(paths)
+        except Exception as e:
+            logger.error(f"Unhandled error processing drop event: {e}", exc_info=True)
+            self.view_model.toast_requested.emit(
+                "Could not process dropped items. See logs for details.", "error"
+            )
 
     def _on_add_archives_requested(self):
         """Opens a file dialog for multi-selection of archives."""

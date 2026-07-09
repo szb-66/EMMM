@@ -19,6 +19,10 @@ loguru==0.7.0
 pillow==11.1.0
 send2trash==1.8.0
 
+# Archive extraction (drag-and-drop .zip/.rar/.7z to create mods).
+# Requires an external unrar/7z binary on PATH only for non-zip formats.
+patoolib==4.0.5
+
 # -----------------------------------------
 # Development/Testing Dependencies
 # -----------------------------------------

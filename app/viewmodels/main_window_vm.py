@@ -392,13 +392,42 @@ class MainWindowViewModel(QObject):
                 f"Active object '{self.active_object.actual_name}' was modified. Refreshing foldergrid."
             )
 
-            # 1. Update state object aktif di main view model
-
+            # 1. Update the active object reference in the main view model
             self.active_object = new_object_item
 
-            # 2. PICKE Re -loading foldergrid with a new path
-            # (For example, the current path has a "disabled" prefix)
+            # 1b. Guard against reload collision: if the foldergrid is still
+            #     mid-operation (toggle/pin/rename worker in flight, or a load
+            #     already queued), defer the reload by a short timer so the
+            #     widget being processed is not replaced/deleted underneath us.
+            #     This prevents the "toggle a mod → foldergrid reloads →
+            #     processing animation lands on a deleted widget → crash"
+            #     chain observed when rapid-toggling objectlist items.
+            fg_vm = self.foldergrid_vm
+            if fg_vm._processing_ids:
+                logger.debug(
+                    "Deferring foldergrid reload: processing_ids non-empty."
+                )
+                QTimer.singleShot(
+                    300,
+                    lambda: self._on_active_object_modified(new_object_item),
+                )
+                return
 
+            # 1c. If the foldergrid is already displaying the (now updated)
+            #     path, an identical reload is redundant and would just rebuild
+            #     the widget tree for nothing — skip it.
+            current_path = getattr(fg_vm, "current_path", None)
+            if (
+                current_path is not None
+                and new_object_item.folder_path is not None
+                and Path(current_path) == Path(new_object_item.folder_path)
+            ):
+                logger.debug(
+                    "Skipping redundant foldergrid reload — path unchanged."
+                )
+                return
+
+            # 2. Reload foldergrid with the (possibly renamed) new path.
             self.foldergrid_vm.load_items(
                 path=new_object_item.folder_path,
                 game=self.active_game,

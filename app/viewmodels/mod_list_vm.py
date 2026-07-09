@@ -4,7 +4,7 @@
 import dataclasses
 from pathlib import Path
 from typing import List
-from PyQt6.QtCore import QObject, pyqtSignal, QThreadPool
+from PyQt6.QtCore import QObject, pyqtSignal, QThreadPool, QTimer
 from PyQt6.QtGui import QPixmap
 from app.models.game_model import Game
 from app.models.mod_item_model import (
@@ -358,19 +358,24 @@ class ModListViewModel(QObject):
         if not item_id: return
 
         self._processing_ids.discard(item_id)
+        # Emit processing-finished first so the UI spinner clears on the
+        # live widget before any list rebuild can replace it.
         self.item_processing_finished.emit(item_id, result.get("success", False))
 
         if result.get("success"):
-            new_item = result.get("data")
+            try:
+                new_item = result.get("data")
 
-            # Update the item in the master list
-            self.update_item_in_list(new_item)
+                # Update the item in the master list
+                self.update_item_in_list(new_item)
 
-            # Re-apply filters AND sorting. The sorting logic will automatically
-            # move the pinned item to the top.
-            self.apply_filters_and_search()
+                # Re-apply filters AND sorting. The sorting logic will automatically
+                # move the pinned item to the top.
+                self.apply_filters_and_search()
 
-            self.toast_requested.emit("Pin status updated.", "success")
+                self.toast_requested.emit("Pin status updated.", "success")
+            except Exception as e:
+                logger.error(f"Error updating item state after pin toggle: {e}", exc_info=True)
         else:
             self.toast_requested.emit(f"Failed to update pin status: {result.get('error')}", "error")
 
@@ -1007,6 +1012,11 @@ class ModListViewModel(QObject):
             logger.warning(
                 f"Could not find item {hydrated_item.id} to update post-hydration. List may have been reloaded."
             )
+        except Exception as e:
+            logger.error(
+                f"Unhandled error while hydrating item {hydrated_item.id}: {e}",
+                exc_info=True,
+            )
 
     def _on_hydration_error(self, error_info: tuple, item_id: str):
         """Handles errors during hydration and cleans up."""
@@ -1054,22 +1064,35 @@ class ModListViewModel(QObject):
 
             logger.info(f"Successfully toggled status for item: {new_item.actual_name}")
 
-            # 4. Re-sort the displayed list so the "enabled first" rule takes
-            #    effect immediately, without waiting for a filesystem event.
-            self.apply_filters_and_search()
-
-            # 5. Emit signals to UI for updates (the rest of the logic is the same).
-            self.item_needs_update.emit(self._create_dict_from_item(new_item))
+            # 4. Emit processing-finished BEFORE the list rebuild so the
+            #    spinner clears on the live widget instead of on a freshly
+            #    replaced one whose owner may already have been deleted.
             self.item_processing_finished.emit(item_id, True)
 
-            # Emit context-specific signals for domino effects.
-            if self.context == CONTEXT_OBJECTLIST:
-                self.active_object_modified.emit(new_item)
-            elif self.context == CONTEXT_FOLDERGRID:
-                self.foldergrid_item_modified.emit(new_item)
+            # 5. Re-sort the displayed list so the "enabled first" rule takes
+            #    effect immediately, without waiting for a filesystem event.
+            try:
+                self.apply_filters_and_search()
+            except Exception as render_err:
+                logger.error(f"apply_filters_and_search failed post-toggle: {render_err}", exc_info=True)
 
-        except (StopIteration, KeyError, ValueError) as e:
-            logger.error(f"Error updating item state after toggle: {e}", exc_info=True)
+            # 6. Emit signals to UI for updates.
+            try:
+                self.item_needs_update.emit(self._create_dict_from_item(new_item))
+            except Exception as emit_err:
+                logger.error(f"item_needs_update emit failed post-toggle: {emit_err}", exc_info=True)
+
+            # Emit context-specific signals for domino effects.
+            try:
+                if self.context == CONTEXT_OBJECTLIST:
+                    self.active_object_modified.emit(new_item)
+                elif self.context == CONTEXT_FOLDERGRID:
+                    self.foldergrid_item_modified.emit(new_item)
+            except Exception as domino_err:
+                logger.error(f"Domino signal emit failed post-toggle: {domino_err}", exc_info=True)
+
+        except Exception as e:
+            logger.critical(f"Unhandled error updating item state after toggle: {e}", exc_info=True)
             self.item_processing_finished.emit(item_id, False)
 
     def _on_toggle_status_error(self, item_id: str, error_info: tuple):

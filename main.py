@@ -1,5 +1,6 @@
 # Main.py
 import sys
+import faulthandler
 from pathlib import Path
 from PyQt6.QtCore import QThreadPool, Qt, QSize
 from PyQt6.QtGui import QIcon
@@ -8,6 +9,111 @@ from qfluentwidgets import SplashScreen, setTheme, Theme
 from app.utils.logger_utils import logger, set_log_directory
 from app.core.constants import APP_ICON_PATH
 from app.utils.async_utils import Worker
+
+# --- Global crash diagnostics -------------------------------------------------
+# faulthandler dumps a Python traceback to stderr the moment a fatal error is
+# raised *or* the interpreter segfaults, which is the only reliable signal for
+# the native (Qt C++) crashes we see when toggling mods.
+faulthandler.enable()
+
+_prev_excepthook = sys.excepthook
+
+
+def _emit_excepthook(exc_type, value, tb):
+    try:
+        logger.critical(
+            f"UNHANDLED EXCEPTION: {value!r}",
+            exc_info=(exc_type, value, tb),
+        )
+    except Exception:
+        pass
+    _prev_excepthook(exc_type, value, tb)
+
+
+sys.excepthook = _emit_excepthook
+
+
+def _patch_flowlayout_takeat():
+    """
+    Fix a PyQt6-compatibility bug in ``qfluentwidgets.FlowLayout.takeAt``.
+
+    The upstream implementation returns the wrapped ``QWidget`` instead of the
+    ``QLayoutItem`` that ``QLayout.takeAt()`` is contractually required to
+    return. Under PyQt6's strict type checking any caller of ``takeAt`` raises
+    ``TypeError: invalid result from FlowLayout.takeAt(), QWidget cannot be
+    converted to PyQt6.QtWidgets.QLayoutItem`` — and the C++ side then
+    hard-crashes (0xC0000409 stack-buffer-overrun) when the layout is asked
+    to reflow while a managed child is being torn down. This is the actual
+    root cause of the "toggling a mod crashes the app" reports.
+
+    The patched version returns the ``QLayoutItem`` (which is what callers
+    expect), and continues to tear down any 'flowAni' animation previously
+    associated with it. ``takeAllWidgets`` is replaced in lockstep because it
+    relied on the buggy ``widget`` return value.
+    """
+    try:
+        from qfluentwidgets import FlowLayout
+    except Exception as exc:  # pragma: no cover
+        logger.warning(f"Skipping FlowLayout patch (import failed): {exc}")
+        return
+
+    def _patched_takeAt(self, index: int):
+        items = getattr(self, "_items", None)
+        if not items or not (0 <= index < len(items)):
+            return None
+        item = items[index]
+        widget = None
+        try:
+            widget = item.widget()
+        except Exception:
+            widget = None
+        if widget is not None:
+            try:
+                ani = widget.property("flowAni")
+            except Exception:
+                ani = None
+            if ani is not None:
+                anis = getattr(self, "_anis", None)
+                if isinstance(anis, list):
+                    try:
+                        anis.remove(ani)
+                    except ValueError:
+                        pass
+                ani_group = getattr(self, "_aniGroup", None)
+                if ani_group is not None:
+                    try:
+                        ani_group.removeAnimation(ani)
+                    except Exception:
+                        pass
+                try:
+                    ani.deleteLater()
+                except Exception:
+                    pass
+        return items.pop(index)
+
+    def _patched_takeAllWidgets(self):
+        items = list(getattr(self, "_items", []))
+        for item in items:
+            widget = None
+            try:
+                widget = item.widget()
+            except Exception:
+                widget = None
+            if widget is not None:
+                try:
+                    widget.deleteLater()
+                except Exception:
+                    pass
+        if hasattr(self, "_items"):
+            self._items.clear()
+
+    FlowLayout.takeAt = _patched_takeAt
+    FlowLayout.takeAllWidgets = _patched_takeAllWidgets
+    logger.debug("FlowLayout.takeAt() monkey-patched for PyQt6 safety.")
+
+
+_patch_flowlayout_takeat()
+# --- end crash diagnostics ---------------------------------------------------
 
 # Import core constants
 from app.core.constants import (
