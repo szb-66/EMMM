@@ -174,6 +174,7 @@ class _LoadMixin:
 
                 # --- Reality Check (Suffix Logic) ---
                 found_thumb_path: Path | None = None
+                fallback_thumb_path: Path | None = None
                 for file in skeleton_item.folder_path.iterdir():
                     if (
                         file.is_file()
@@ -186,6 +187,13 @@ class _LoadMixin:
                         ):
                             found_thumb_path = file
                             break  # Ambil yang pertama ditemukan
+                        if fallback_thumb_path is None:
+                            fallback_thumb_path = file
+
+                # Fall back to first image file if no conventionally-named
+                # thumbnail was found and properties.json has no entry.
+                if not found_thumb_path and not properties.get("thumbnail_path"):
+                    found_thumb_path = fallback_thumb_path
 
                 # --- Reconcile ---
                 json_thumb_str = properties.get("thumbnail_path", "")

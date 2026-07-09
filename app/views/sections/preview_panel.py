@@ -257,6 +257,16 @@ class PreviewPanel(QWidget):
             self.title_label.setText(full_title)
             with QSignalBlocker(self.status_switch):
                 self.status_switch.setChecked(item_data.get("is_enabled", False))
+
+            # Refresh thumbnails/description when the item transitions from
+            # skeleton (empty preview_images) to hydrated (real data).
+            new_preview = item_data.get("preview_images", [])
+            if new_preview:
+                self.thumbnail_slider.set_image_paths(new_preview)
+            desc = item_data.get("description", "")
+            if desc and self.description_editor.toPlainText() != desc:
+                with QSignalBlocker(self.description_editor):
+                    self.description_editor.setText(desc)
             return
 
         # ── full clear ─────────────────────────────────────────────────────────
