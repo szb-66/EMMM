@@ -9,6 +9,7 @@ import json
 import os
 import hashlib
 import zipfile
+import dataclasses
 from pathlib import Path
 from typing import Tuple
 
@@ -23,6 +24,7 @@ from app.models.mod_item_model import (
 )
 from app.core.constants import (
     PROPERTIES_JSON_NAME,
+    INFO_JSON_NAME,
     CONTEXT_OBJECTLIST,
     CONTEXT_FOLDERGRID,
     OBJECT_THUMBNAIL_SUFFIX,

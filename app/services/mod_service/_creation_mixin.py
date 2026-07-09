@@ -13,6 +13,9 @@ import zipfile
 from pathlib import Path
 from typing import List
 
+from PyQt6.QtGui import QImage
+from PIL import Image
+
 from app.models.mod_item_model import (
     ObjectItem,
     FolderItem,

@@ -5,8 +5,12 @@ Extracted from the original monolithic ``mod_service.py`` per ADR 0001.
 The Mixin must NOT define ``__init__``.
 """
 import json
+import os
 import time
 from pathlib import Path
+
+from PyQt6.QtGui import QImage
+from PIL import Image
 
 from app.models.mod_item_model import (
     BaseModItem,
