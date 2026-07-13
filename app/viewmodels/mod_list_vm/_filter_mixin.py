@@ -197,10 +197,13 @@ class _FilterMixin:
                     scored_results.append((item, score))
 
         # --- STAGE 4: Sort the final list ---
-        # Sort by: 1. Score (relevance), 2. Pinned, 3. Enabled, 4. Name
+        # Sort by: 1. Score (relevance), 2. Pinned, 3. Name
+        # ponytail: status removed from sort key — toggling enable/disable
+        # no longer relocates the mod within the grid. actual_name is stable
+        # because the DISABLED prefix is stripped by _parse_folder_name.
         sorted_results = sorted(
             scored_results,
-            key=lambda x: (x[1], not x[0].is_pinned, x[0].status != ModStatus.ENABLED, x[0].actual_name.lower())
+            key=lambda x: (x[1], not x[0].is_pinned, x[0].actual_name.lower())
         )
 
         # Extract only the item objects from the (item, score) tuples

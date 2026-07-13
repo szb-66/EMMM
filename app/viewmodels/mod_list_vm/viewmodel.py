@@ -85,6 +85,9 @@ class ModListViewModel(_ThumbnailMixin, _ExclusiveActivationMixin,
     object_created = pyqtSignal(dict)
     list_refresh_requested = pyqtSignal()
     exclusive_activation_confirmation_requested = pyqtSignal(dict)
+    # Cross-VM: a mod was dragged onto a character in the objectlist.
+    # (item_id, target_character_folder_path)
+    move_to_character_requested = pyqtSignal(str, object)
 
     def __init__(
         self,

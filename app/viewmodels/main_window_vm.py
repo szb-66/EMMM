@@ -363,6 +363,11 @@ class MainWindowViewModel(QObject):
         )
         self.foldergrid_vm.path_changed.connect(self._on_foldergrid_path_changed)
 
+        # Cross-VM DnD: a mod was dragged from foldergrid onto a character row.
+        self.objectlist_vm.move_to_character_requested.connect(
+            self._on_move_to_character_requested
+        )
+
     def _on_toast_requested(self, message: str, level: str = "info"):
         """
         Creates and shows a non-blocking InfoBar (toast) notification
@@ -562,6 +567,11 @@ class MainWindowViewModel(QObject):
                 f"Currently previewed item '{modified_item.actual_name}' was modified. Updating preview."
             )
             self.preview_panel_vm.update_view_for_item(modified_item)
+
+    def _on_move_to_character_requested(self, item_id: str, target_character_path):
+        """Cross-VM DnD: moves a mod from the current foldergrid into a character's root."""
+        logger.info(f"Cross-VM move: item '{item_id}' → '{target_character_path}'")
+        self.foldergrid_vm.move_item_to_folder(item_id, target_character_path)
 
     def _on_objectlist_refresh_complete(self, success: bool):
         """

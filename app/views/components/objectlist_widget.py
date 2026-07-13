@@ -1,6 +1,6 @@
 # App/views/components/objectlist widget.py
 
-from PyQt6.QtCore import pyqtSignal, QSize, Qt
+from PyQt6.QtCore import pyqtSignal, QSize, Qt, QMimeData, QByteArray
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QSizePolicy, QWidget, QHBoxLayout
 from qfluentwidgets import (
@@ -20,6 +20,7 @@ from app.utils.ui_utils import UiUtils
 from app.viewmodels.mod_list_vm import ModListViewModel
 from app.utils.logger_utils import logger
 from app.views.dialogs.edit_object_dialog import EditObjectDialog
+from app.core.constants import EMMM_MOD_MIME_TYPE
 
 class ObjectListItemWidget(QWidget):
     """
@@ -46,6 +47,7 @@ class ObjectListItemWidget(QWidget):
         self._init_ui()
         self._connect_signals()
         self.set_data(self.item_data)
+        self.setAcceptDrops(True)
 
     def _init_ui(self):
         """Initializes the UI components of the widget with Fluent components."""
@@ -266,6 +268,32 @@ class ObjectListItemWidget(QWidget):
         self.item_selected.emit(self.item_data)
         super().mousePressEvent(event)
         pass
+
+    def dragEnterEvent(self, event):
+        """Accepts internal mod drags from the foldergrid (cross-character move)."""
+        if event.mimeData().hasFormat(EMMM_MOD_MIME_TYPE):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        """Moves a dropped mod into this character's root folder via cross-VM signal."""
+        mime = event.mimeData()
+        if not mime.hasFormat(EMMM_MOD_MIME_TYPE):
+            super().dropEvent(event)
+            return
+
+        dropped_id = bytes(mime.data(EMMM_MOD_MIME_TYPE)).decode("utf-8")
+        if not dropped_id:
+            event.ignore()
+            return
+
+        target_path = self.item_data.get("folder_path")
+        if target_path:
+            self.view_model.move_to_character_requested.emit(dropped_id, target_path)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def showEvent(self, event):
         """Triggers lazy-hydration when the widget becomes visible."""

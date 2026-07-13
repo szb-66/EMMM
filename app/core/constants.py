@@ -38,6 +38,9 @@ DEBOUNCE_DELAY_MS: int = 300
 CONTEXT_OBJECTLIST: str = "objectlist"
 CONTEXT_FOLDERGRID: str = "foldergrid"
 
+# --- Drag & Drop (internal mod reordering) ---
+EMMM_MOD_MIME_TYPE: str = "application/x-emmm-mod"
+
 # --- .ini File Parsing Constants ---
 INI_CONSTANTS_SECTION: str = "Constants"
 

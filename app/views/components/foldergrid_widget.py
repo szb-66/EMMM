@@ -1,8 +1,8 @@
 # App/views/components/foldergrid widget.py
 
-from PyQt6.QtCore import QSignalBlocker, pyqtSignal, QSize, Qt
-from PyQt6.QtGui import QAction, QMouseEvent
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtCore import QSignalBlocker, pyqtSignal, QSize, Qt, QMimeData, QByteArray
+from PyQt6.QtGui import QAction, QMouseEvent, QDrag
+from PyQt6.QtWidgets import QWidget, QApplication
 from qfluentwidgets import (
     CardWidget,
     BodyLabel,
@@ -20,6 +20,7 @@ from app.utils.logger_utils import logger
 from app.utils.ui_utils import UiUtils
 from app.viewmodels.mod_list_vm import ModListViewModel
 from app.views.dialogs.rename_dialog import RenameDialog
+from app.core.constants import EMMM_MOD_MIME_TYPE
 
 
 class FolderGridItemWidget(CardWidget):
@@ -51,9 +52,12 @@ class FolderGridItemWidget(CardWidget):
         self._image_height = 185
         self._thumb_size = QSize(self._card_width, self._image_height)
 
+        self._drag_start_pos = None
+
         self._init_ui()
         self._connect_signals()
         self.set_data(self.item_data)
+        self.setAcceptDrops(True)
 
     def _init_ui(self):
         """Initializes the UI components of the widget."""
@@ -278,13 +282,89 @@ class FolderGridItemWidget(CardWidget):
         delete_action.triggered.connect(self._on_delete_requested)
         menu.addAction(delete_action)
 
+        menu.addSeparator()
+
+        new_folder_action = QAction(FluentIcon.FOLDER_ADD.icon(), "New Folder...", self)
+        new_folder_action.triggered.connect(self._on_new_folder_requested)
+        menu.addAction(new_folder_action)
+
         menu.exec(event.globalPos())
 
     def mousePressEvent(self, event):
         """Flow 5.2: Notifies the main view that this item was selected for preview.
         Single-click always updates selection; navigation is handled by double-click."""
         self.item_selected.emit(self.item_data)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = event.position().toPoint()
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Starts an internal drag when the left button is held and moved beyond the threshold."""
+        if self._drag_start_pos is None or event.buttons() & Qt.MouseButton.LeftButton == 0:
+            super().mouseMoveEvent(event)
+            return
+
+        distance = (event.position().toPoint() - self._drag_start_pos).manhattanLength()
+        if distance < QApplication.startDragDistance():
+            return
+
+        item_id = self.item_data.get("id")
+        if not item_id:
+            return
+
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(EMMM_MOD_MIME_TYPE, QByteArray(item_id.encode("utf-8")))
+        drag.setMimeData(mime)
+        self._drag_start_pos = None
+        drag.exec(Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self, event):
+        """Accepts internal mod drags (for move-into-folder and auto-group-on-mod)."""
+        if event.mimeData().hasFormat(EMMM_MOD_MIME_TYPE):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        """Handles a dropped mod: move into navigable folder, or auto-group with another mod."""
+        mime = event.mimeData()
+        if not mime.hasFormat(EMMM_MOD_MIME_TYPE):
+            super().dropEvent(event)
+            return
+
+        dropped_id = bytes(mime.data(EMMM_MOD_MIME_TYPE)).decode("utf-8")
+        my_id = self.item_data.get("id")
+        if not dropped_id or dropped_id == my_id:
+            event.ignore()
+            return
+
+        is_navigable = self.item_data.get("is_navigable")
+        if is_navigable is True or is_navigable is None:
+            # Drop onto a navigable folder (or a skeleton assumed to be a folder)
+            # → move the mod inside it.
+            folder_path = self.item_data.get("folder_path")
+            if folder_path:
+                self.view_model.move_item_to_folder(dropped_id, folder_path)
+                event.acceptProposedAction()
+                return
+        elif is_navigable is False:
+            # Drop onto another mod → prompt for a new folder name, then auto-group.
+            self._prompt_auto_group(dropped_id, my_id)
+            event.acceptProposedAction()
+            return
+
+        event.ignore()
+
+    def _prompt_auto_group(self, item_id_a: str, item_id_b: str):
+        """Opens a RenameDialog to name the new folder, then triggers auto-group."""
+        all_names = self.view_model.get_all_item_names()
+        dialog = RenameDialog("New Folder", all_names, self.window())
+        dialog.setWindowTitle("Create New Folder")
+        dialog.ok_button.setText("Create")
+        if dialog.exec():
+            folder_name = dialog.get_new_name()
+            self.view_model.auto_group_items([item_id_a, item_id_b], folder_name)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         """
@@ -344,6 +424,16 @@ class FolderGridItemWidget(CardWidget):
         if dialog.exec():
             new_name = dialog.get_new_name()
             self.view_model.rename_item(item_id, new_name)
+
+    def _on_new_folder_requested(self):
+        """Opens a dialog to name a new folder, then asks the ViewModel to create it."""
+        all_names = self.view_model.get_all_item_names()
+        dialog = RenameDialog("New Folder", all_names, self.window())
+        dialog.setWindowTitle("Create New Folder")
+        dialog.ok_button.setText("Create")
+        if dialog.exec():
+            folder_name = dialog.get_new_name()
+            self.view_model.create_new_folder(folder_name)
 
     # ---Private Slots (Handling UI events) ---
 

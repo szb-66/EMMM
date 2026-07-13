@@ -27,12 +27,97 @@ from app.core.constants import (
 )
 from app.utils.logger_utils import logger
 import dataclasses
+import hashlib
 import shutil
 import uuid
 
 
 class _CrudMixin:
     # --- Pin, rename, delete, type conversion, DB sync, object update ---
+
+    @staticmethod
+    def _encode_folder_name(actual_name: str, status: ModStatus, is_pinned: bool) -> str:
+        """Reconstructs a folder name with the disabled-prefix and pin-suffix encoding."""
+        prefix = DEFAULT_DISABLED_PREFIX if status == ModStatus.DISABLED else ""
+        suffix = PIN_SUFFIX if is_pinned else ""
+        return f"{prefix}{actual_name}{suffix}"
+
+    @staticmethod
+    def _compute_item_id(parent_scan_path: Path, item_path: Path) -> str:
+        """Recomputes the SHA1 id after a move (mirrors _load_mixin.get_item_skeletons)."""
+        relative_path = item_path.relative_to(parent_scan_path)
+        id_input = f"{parent_scan_path.as_posix()}/{relative_path.as_posix()}"
+        return hashlib.sha1(id_input.encode("utf-8")).hexdigest()
+
+    def move_item_to(self, item: BaseModItem, target_parent_path: Path) -> dict:
+        """
+        Moves an item's folder into target_parent_path, preserving status/pin encoding.
+        Returns the new item model with updated folder_path and id.
+        """
+        try:
+            if not item.folder_path.exists():
+                return {"success": False, "error": "Source folder does not exist.", "item_id": item.id}
+            if not target_parent_path.is_dir():
+                return {"success": False, "error": "Target directory does not exist.", "item_id": item.id}
+
+            new_folder_name = self._encode_folder_name(item.actual_name, item.status, item.is_pinned)
+            new_path = target_parent_path / new_folder_name
+
+            if new_path.exists():
+                return {"success": False, "error": f"A folder named '{new_folder_name}' already exists in the target.", "item_id": item.id}
+            if new_path == item.folder_path:
+                return {"success": True, "data": item, "item_id": item.id}
+
+            logger.info(f"Moving '{item.folder_path.name}' → '{new_path}'")
+            shutil.move(str(item.folder_path), str(new_path))
+
+            new_id = self._compute_item_id(target_parent_path, new_path)
+            new_item = dataclasses.replace(item, id=new_id, folder_path=new_path)
+            return {"success": True, "data": new_item, "old_id": item.id, "item_id": new_id}
+
+        except Exception as e:
+            error_msg = f"Failed to move '{item.actual_name}': {e}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg, "item_id": item.id}
+
+    def create_empty_folder(self, parent_path: Path, name: str) -> dict:
+        """Creates an empty folder inside parent_path. Used by 'New Folder' and auto-group."""
+        try:
+            new_path = parent_path / name
+            if new_path.exists():
+                return {"success": False, "error": f"A folder named '{name}' already exists."}
+            os.mkdir(new_path)
+            logger.info(f"Created empty folder '{new_path}'")
+            return {"success": True, "folder_path": new_path}
+        except Exception as e:
+            error_msg = f"Failed to create folder '{name}': {e}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    def auto_group_items(self, items: list, parent_path: Path, folder_name: str) -> dict:
+        """
+        Creates a new folder inside parent_path and moves all items into it.
+        Atomic from the VM's perspective: one worker, one result, one reload.
+        """
+        try:
+            create_result = self.create_empty_folder(parent_path, folder_name)
+            if not create_result["success"]:
+                return create_result
+            new_folder_path = create_result["folder_path"]
+
+            moved_ids = []
+            for item in items:
+                move_result = self.move_item_to(item, new_folder_path)
+                if move_result["success"]:
+                    moved_ids.append(move_result.get("old_id", item.id))
+                else:
+                    logger.warning(f"Auto-group: failed to move '{item.actual_name}': {move_result.get('error')}")
+
+            return {"success": True, "folder_path": new_folder_path, "moved_old_ids": moved_ids}
+        except Exception as e:
+            error_msg = f"Failed to auto-group items: {e}"
+            logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
 
     def toggle_pin_status(self, item: BaseModItem) -> dict:
         """

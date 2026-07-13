@@ -8,11 +8,137 @@ from PyQt6.QtCore import QThreadPool
 
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
-from app.core.constants import CONTEXT_OBJECTLIST
+from app.core.constants import CONTEXT_OBJECTLIST, CONTEXT_FOLDERGRID
 
 
 class _CrudMixin:
     # --- Single-item CRUD operations ---
+
+    # --- Move / New Folder / Auto-group (DnD support) ---
+
+    def move_item_to_folder(self, item_id: str, target_folder_path):
+        """Moves a mod item into target_folder_path (a navigable folder or character root)."""
+        from pathlib import Path
+
+        if item_id in self._processing_ids:
+            logger.warning(f"Item '{item_id}' already processing. Ignoring move.")
+            return
+
+        item = next((i for i in self.master_list if i.id == item_id), None)
+        if not item:
+            logger.error(f"move_item_to_folder: item '{item_id}' not found.")
+            return
+
+        target_path = Path(target_folder_path)
+        logger.info(f"Moving '{item.actual_name}' → '{target_path}'")
+
+        self._processing_ids.add(item_id)
+        self.watched_refresh_suppression_requested.emit(self.context)
+        self.item_processing_started.emit(item_id)
+
+        worker = Worker(self.mod_service.move_item_to, item, target_path)
+        worker.signals.result.connect(
+            lambda result, id=item_id: self._on_move_item_finished(id, result)
+        )
+        worker.signals.error.connect(
+            lambda err, id=item_id: self._on_generic_worker_error(id, err, "move")
+        )
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_move_item_finished(self, item_id: str, result: dict):
+        self._processing_ids.discard(item_id)
+        self.item_processing_finished.emit(item_id, result.get("success", False))
+
+        if not result.get("success"):
+            self.toast_requested.emit(result.get("error", "Move failed."), "error")
+            return
+
+        new_item = result.get("data")
+        old_id = result.get("old_id", item_id)
+
+        # Remove the moved item from source lists (it now lives under a new parent).
+        self.master_list = [i for i in self.master_list if i.id != old_id]
+        self.displayed_items = [i for i in self.displayed_items if i.id != old_id]
+        self.apply_filters_and_search()
+        self.toast_requested.emit(f"Moved '{new_item.actual_name}' successfully.", "success")
+
+    def create_new_folder(self, name: str):
+        """Creates an empty folder in the current foldergrid path, then reloads."""
+        if not self.current_path:
+            logger.warning("create_new_folder: no current_path.")
+            return
+
+        from pathlib import Path
+
+        parent_path = Path(self.current_path)
+        logger.info(f"Creating new folder '{name}' in '{parent_path}'")
+
+        self.watched_refresh_suppression_requested.emit(self.context)
+
+        worker = Worker(self.mod_service.create_empty_folder, parent_path, name)
+        worker.signals.result.connect(self._on_create_folder_finished)
+        worker.signals.error.connect(
+            lambda err: self._on_generic_worker_error("", err, "create folder")
+        )
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_create_folder_finished(self, result: dict):
+        if not result.get("success"):
+            self.toast_requested.emit(result.get("error", "Failed to create folder."), "error")
+            return
+
+        self._item_to_select_after_load = result["folder_path"].name
+        self.load_items(
+            path=self.current_path,
+            game=self.current_game,
+            is_new_root=False,
+        )
+        self.toast_requested.emit("Folder created.", "success")
+
+    def auto_group_items(self, item_ids: list, folder_name: str):
+        """Creates a new folder and moves all items into it, then reloads."""
+        if not self.current_path or not item_ids:
+            return
+
+        from pathlib import Path
+
+        items = [i for i in self.master_list if i.id in set(item_ids)]
+        if not items:
+            logger.warning("auto_group_items: no valid items found.")
+            return
+
+        parent_path = Path(self.current_path)
+        logger.info(f"Auto-grouping {len(items)} items into '{folder_name}' in '{parent_path}'")
+
+        for item in items:
+            self._processing_ids.add(item.id)
+            self.item_processing_started.emit(item.id)
+        self.watched_refresh_suppression_requested.emit(self.context)
+
+        worker = Worker(self.mod_service.auto_group_items, items, parent_path, folder_name)
+        worker.signals.result.connect(self._on_auto_group_finished)
+        worker.signals.error.connect(
+            lambda err: self._on_generic_worker_error("", err, "auto-group")
+        )
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_auto_group_finished(self, result: dict):
+        moved_ids = result.pop("moved_old_ids", [])
+        for mid in moved_ids:
+            self._processing_ids.discard(mid)
+            self.item_processing_finished.emit(mid, result.get("success", False))
+
+        if not result.get("success"):
+            self.toast_requested.emit(result.get("error", "Auto-group failed."), "error")
+            return
+
+        self._item_to_select_after_load = result["folder_path"].name
+        self.load_items(
+            path=self.current_path,
+            game=self.current_game,
+            is_new_root=False,
+        )
+        self.toast_requested.emit("Items grouped into new folder.", "success")
 
     def toggle_item_status(self, item_id: str):
         """

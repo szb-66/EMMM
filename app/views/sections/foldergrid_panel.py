@@ -560,6 +560,30 @@ class FolderGridPanel(QWidget):
 
     # ---UI EVENT HANDLERS (Forwarding to ViewModel) ---
 
+    def contextMenuEvent(self, event):
+        """Right-click on empty area: offers 'New Folder...' to create an empty folder."""
+        if not self.view_model.current_path:
+            super().contextMenuEvent(event)
+            return
+
+        menu = RoundMenu(parent=self)
+        new_folder_action = QAction(FluentIcon.FOLDER_ADD.icon(), "New Folder...", self)
+        new_folder_action.triggered.connect(self._on_new_folder_requested)
+        menu.addAction(new_folder_action)
+        menu.exec(event.globalPos())
+
+    def _on_new_folder_requested(self):
+        """Opens a RenameDialog to name the new folder, then delegates to the ViewModel."""
+        from app.views.dialogs.rename_dialog import RenameDialog
+
+        all_names = self.view_model.get_all_item_names()
+        dialog = RenameDialog("New Folder", all_names, self.window())
+        dialog.setWindowTitle("Create New Folder")
+        dialog.ok_button.setText("Create")
+        if dialog.exec():
+            folder_name = dialog.get_new_name()
+            self.view_model.create_new_folder(folder_name)
+
     def dragEnterEvent(self, event):
         """Accepts drags that contain local file paths."""
         try:
