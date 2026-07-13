@@ -6,6 +6,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout
 from qfluentwidgets import BodyLabel, CaptionLabel, AvatarWidget
 
+from app.core import i18n as _i18n
 from app.services.thumbnail_service import ThumbnailService
 from app.services.database_service import DatabaseService
 from app.utils.logger_utils import logger
@@ -61,14 +62,14 @@ class SyncCandidateWidget(QWidget):
 
     def _populate_data(self):
         """Fills the widget with data and requests the thumbnail."""
-        self.name_label.setText(self.candidate_data.get("name", "Unknown"))
+        self.name_label.setText(self.candidate_data.get("name", _i18n.tr("failure_report.unknown")))
 
         rarity_alias = self.database_service.get_alias_for_game(self.game_type, 'rarity', fallback="Rarity")
         element_alias = self.database_service.get_alias_for_game(self.game_type, 'element', fallback="Element")
 
         rarity = self.candidate_data.get("rarity", "N/A")
         element = self.candidate_data.get("element", "N/A")
-        self.details_label.setText(f"{rarity_alias}: {rarity}, {element_alias}: {element}")
+        self.details_label.setText(_i18n.tr("sync_candidate.details", rarity_alias=rarity_alias, rarity=rarity, element_alias=element_alias, element=element))
 
         thumb_path_str = self.candidate_data.get("thumbnail_path")
         thumb_path = Path(thumb_path_str) if thumb_path_str else None

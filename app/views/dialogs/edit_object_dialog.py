@@ -12,6 +12,7 @@ from qfluentwidgets import (
     PushButton, ImageLabel, FluentIcon
 )
 
+from app.core import i18n as _i18n
 from app.models.mod_item_model import ModType
 from app.utils.image_utils import ImageUtils
 from app.utils.logger_utils import logger
@@ -46,7 +47,7 @@ class EditObjectDialog(QDialog):
 
     def _init_ui(self):
         """Initializes and populates the UI components."""
-        self.setWindowTitle(f"Edit Object: {self.original_name}")
+        self.setWindowTitle(_i18n.tr("edit_object.title", name=self.original_name))
         self.setFixedWidth(420)
 
         main_layout = QVBoxLayout(self)
@@ -103,30 +104,30 @@ class EditObjectDialog(QDialog):
         thumbnail_layout.addWidget(self.thumbnail_preview, 0, Qt.AlignmentFlag.AlignCenter)
 
         thumb_button_layout = QHBoxLayout()
-        self.browse_thumb_button = PushButton("Browse...")
-        self.paste_thumb_button = PushButton("Paste Image")
+        self.browse_thumb_button = PushButton(_i18n.tr("common.browse"))
+        self.paste_thumb_button = PushButton(_i18n.tr("thumb.paste"))
         thumb_button_layout.addWidget(self.browse_thumb_button)
         thumb_button_layout.addWidget(self.paste_thumb_button)
         thumbnail_layout.addLayout(thumb_button_layout)
 
         # --- Add all rows to layout ---
-        self.form_layout.addRow("Folder Name:", self.folder_name_edit)
-        self.form_layout.addRow("Object Type:", self.object_type_combo)
-        self.form_layout.addRow("Rarity:", self.rarity_combo)
-        self.form_layout.addRow("Gender:", self.gender_combo)
-        self.form_layout.addRow("Element:", self.element_combo)
-        self.form_layout.addRow("Subtype:", self.subtype_edit)
-        self.form_layout.addRow("Tags:", self.tags_edit)
-        self.form_layout.addRow("Thumbnail:", thumbnail_container)
+        self.form_layout.addRow(_i18n.tr("common.folder_name"), self.folder_name_edit)
+        self.form_layout.addRow(_i18n.tr("common.object_type"), self.object_type_combo)
+        self.form_layout.addRow(_i18n.tr("common.rarity"), self.rarity_combo)
+        self.form_layout.addRow(_i18n.tr("common.gender"), self.gender_combo)
+        self.form_layout.addRow(_i18n.tr("common.element"), self.element_combo)
+        self.form_layout.addRow(_i18n.tr("common.subtype"), self.subtype_edit)
+        self.form_layout.addRow(_i18n.tr("common.tags"), self.tags_edit)
+        self.form_layout.addRow(_i18n.tr("common.thumbnail"), thumbnail_container)
 
         # --- Bottom Buttons and Validation Label ---
         button_layout = QHBoxLayout()
         self.status_label = BodyLabel("", self)
         self.status_label.setStyleSheet("color: #f97171;")
-        self.sync_button = PushButton(FluentIcon.SYNC, "Sync with Database")
-        self.sync_button.setToolTip("Attempt to auto-fill data from the database based on the folder name.")
-        self.save_button = PrimaryPushButton("Save Changes")
-        self.cancel_button = PushButton("Cancel")
+        self.sync_button = PushButton(FluentIcon.SYNC, _i18n.tr("edit_object.sync_db"))
+        self.sync_button.setToolTip(_i18n.tr("edit_object.sync_db_tooltip"))
+        self.save_button = PrimaryPushButton(_i18n.tr("edit_object.save_changes"))
+        self.cancel_button = PushButton(_i18n.tr("common.cancel"))
         button_layout.addWidget(self.sync_button)
         button_layout.addStretch(1)
 
@@ -178,11 +179,11 @@ class EditObjectDialog(QDialog):
         error_message = ""
 
         if not new_name:
-            error_message = "Name cannot be empty."
+            error_message = _i18n.tr("common.name_cannot_be_empty")
         elif self.ILLEGAL_CHAR_PATTERN.search(new_name):
-            error_message = 'Name cannot contain: \\ / : * ? " < > |'
+            error_message = _i18n.tr("common.illegal_chars")
         elif new_name_lower in self.other_existing_names:
-            error_message = f"An item named '{new_name}' already exists."
+            error_message = _i18n.tr("common.duplicate_name", name=new_name)
 
         self.status_label.setText(error_message)
         self.status_label.setVisible(bool(error_message))
@@ -213,7 +214,7 @@ class EditObjectDialog(QDialog):
         """Opens a file dialog to select a thumbnail image."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Thumbnail Image",
+            _i18n.tr("create_object.select_thumb"),
             "", # Start directory
             "Image Files (*.png *.jpg *.jpeg *.webp)"
         )
@@ -237,7 +238,7 @@ class EditObjectDialog(QDialog):
         if image is None:
             logger.warning("No valid image found on clipboard.")
             # show toast
-            UiUtils.show_toast(self, "No valid image found on clipboard.", "warning")
+            UiUtils.show_toast(self, _i18n.tr("common.no_clipboard_image"), "warning")
             return
 
         # Convert PIL Image to QImage

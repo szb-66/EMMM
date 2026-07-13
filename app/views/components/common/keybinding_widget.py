@@ -21,6 +21,7 @@ from qfluentwidgets import (
 )
 
 from app.services.Iniparsing_service import KeyBinding, Assignment
+from app.core import i18n as _i18n
 
 # ---------- constants ----------
 ROW_MARGINS = (0, 0, 0, 0)
@@ -90,7 +91,7 @@ class KeyBindingWidget(QWidget):
         h_layout.addStretch(1)
 
         if self.binding_data.condition:
-            cond_label = CaptionLabel(f"if: {self.binding_data.condition}")
+            cond_label = CaptionLabel(_i18n.tr("keybinding.if_cond", condition=self.binding_data.condition))
             cond_label.setStyleSheet("background: transparent; border: none;")
             h_layout.addWidget(cond_label)
 
@@ -98,9 +99,9 @@ class KeyBindingWidget(QWidget):
 
         # ── note row ──────────────────────────────────────────────────────────────
         self.note_edit = LineEdit()
-        self.note_edit.setPlaceholderText("Add a note…")
+        self.note_edit.setPlaceholderText(_i18n.tr("keybinding.note_placeholder"))
         self.note_edit.setText(self.binding_data.note)
-        root.addLayout(self._create_row("Note", self.note_edit))
+        root.addLayout(self._create_row(_i18n.tr("keybinding.note"), self.note_edit))
 
         # ── assignments ───────────────────────────────────────────────────────────
         if self.binding_data.assignments:
@@ -131,12 +132,12 @@ class KeyBindingWidget(QWidget):
             for val in self.binding_data.keys:
                 edit = self._line_edit(val)
                 self.key_edits.append(edit)
-                tr_layout.addLayout(self._create_row("Key", edit))
+                tr_layout.addLayout(self._create_row(_i18n.tr("keybinding.key"), edit))
 
             for val in self.binding_data.backs:
                 edit = self._line_edit(val)
                 self.back_edits.append(edit)
-                tr_layout.addLayout(self._create_row("Back", edit))
+                tr_layout.addLayout(self._create_row(_i18n.tr("keybinding.back"), edit))
 
             root.addWidget(trigger_section)
 
@@ -149,7 +150,7 @@ class KeyBindingWidget(QWidget):
         row.setContentsMargins(*ROW_MARGINS)
         row.setSpacing(8)
 
-        lbl = BodyLabel(f"{text}:")
+        lbl = BodyLabel(_i18n.tr("keybinding.field_label", text=text))
         lbl.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
         lbl.setStyleSheet("background: transparent; border: none; color: rgba(255,255,255,0.7);")
 

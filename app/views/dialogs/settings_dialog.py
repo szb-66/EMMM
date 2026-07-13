@@ -28,9 +28,11 @@ from qfluentwidgets import (
     TitleLabel,
     LineEdit,
     CheckBox,
+    ComboBox,
 )
 from app.utils.ui_utils import UiUtils
 from app.utils.logger_utils import logger
+from app.core import i18n as _i18n
 from app.viewmodels.settings_vm import SettingsViewModel
 from app.views.dialogs.edit_game_dialog import EditGameDialog
 from app.views.dialogs.select_game_type_dialog import SelectGameTypeDialog
@@ -52,7 +54,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
 
     def _init_ui(self):
         """Initializes the UI components of the dialog."""
-        self.setWindowTitle("Settings")
+        self.setWindowTitle(_i18n.tr("settings.title"))
         self.setMinimumSize(700, 500)
 
         # REVISED: Create one main layout and apply it directly to the dialog
@@ -68,6 +70,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
 
         # ---Create and Add Tab Contents ---
         # Call these methods FIRST to populate the pivot and stack
+        self._create_general_tab()
         self._create_games_tab()
         self._create_launcher_tab()
         self._create_presets_tab()
@@ -87,12 +90,47 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)  # Push buttons to the right
 
-        self.cancel_button = PushButton("Cancel")
-        self.save_button = PrimaryPushButton("Save")
+        self.cancel_button = PushButton(_i18n.tr("common.cancel"))
+        self.save_button = PrimaryPushButton(_i18n.tr("common.save"))
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.save_button)
 
         dialog_layout.addLayout(button_layout)
+
+    def _create_general_tab(self):
+        """Creates the UI for the 'General' settings tab (language picker)."""
+        general_widget = QWidget()
+        layout = QFormLayout(general_widget)
+        layout.setContentsMargins(10, 20, 10, 10)
+        layout.setSpacing(15)
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+
+        self.language_combo = ComboBox(self)
+        for code, label in _i18n.AVAILABLE_LANGUAGES.items():
+            self.language_combo.addItem(label, userData=code)
+        # Select current language
+        current_lang = self.view_model.temp_language if hasattr(self.view_model, "temp_language") else _i18n.get_current_language()
+        idx = self.language_combo.findData(current_lang)
+        if idx >= 0:
+            self.language_combo.setCurrentIndex(idx)
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
+
+        layout.addRow(_i18n.tr("settings_general.language"), self.language_combo)
+        layout.addRow("", BodyLabel(_i18n.tr("settings_general.language_hint"), self))
+
+        self.pages["general_tab"] = general_widget
+        self.stack.addWidget(general_widget)
+        self.pivot.addItem(
+            routeKey="general_tab",
+            text=_i18n.tr("settings_general.title"),
+            onClick=lambda: self._switch_to_tab("general_tab"),
+            icon=FluentIcon.SETTING,
+        )
+
+    def _on_language_changed(self, _index: int):
+        code = self.language_combo.currentData()
+        if code:
+            self.view_model.set_temp_language(code)
 
     def _create_games_tab(self):
         """Creates the UI for the 'Games' management tab."""
@@ -101,12 +139,12 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         layout.setContentsMargins(0, 10, 0, 0)
         layout.setSpacing(10)
 
-        layout.addWidget(SubtitleLabel("Manage Mods Paths"))
+        layout.addWidget(SubtitleLabel(_i18n.tr("settings.manage_paths")))
 
         toolbar_layout = QHBoxLayout()
-        self.remove_game_button = PushButton(FluentIcon.DELETE, "Remove Selected")
-        self.edit_game_button = PushButton(FluentIcon.EDIT, "Edit Selected")
-        self.add_game_button = PushButton(FluentIcon.ADD, "Add Game")
+        self.remove_game_button = PushButton(FluentIcon.DELETE, _i18n.tr("settings.remove_selected"))
+        self.edit_game_button = PushButton(FluentIcon.EDIT, _i18n.tr("settings.edit_selected"))
+        self.add_game_button = PushButton(FluentIcon.ADD, _i18n.tr("settings.add_game"))
         toolbar_layout.addWidget(self.remove_game_button)
         toolbar_layout.addWidget(self.edit_game_button)
         toolbar_layout.addWidget(self.add_game_button)
@@ -115,7 +153,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         # Table to display games
         self.games_table = TableWidget(self)
         self.games_table.setColumnCount(3)
-        self.games_table.setHorizontalHeaderLabels(["Name", "Path", "Mods Type"])
+        self.games_table.setHorizontalHeaderLabels([_i18n.tr("settings.header_name"), _i18n.tr("settings.header_path"), _i18n.tr("settings.header_type")])
         self.games_table.setEditTriggers(self.games_table.EditTrigger.NoEditTriggers)
 
         # ---Apply fluent styles ---
@@ -141,14 +179,14 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         self.stack.addWidget(games_widget)
         self.pivot.addItem(
             routeKey="games_tab",
-            text="Games",
+            text=_i18n.tr("settings.manage_paths"),
             onClick=lambda: self._switch_to_tab("games_tab"),
             icon=FluentIcon.GAME,
         )
 
         sync_layout = QHBoxLayout()
-        self.sync_game_button = PushButton(FluentIcon.SYNC, "Sync Data with Database")
-        self.sync_game_button.setToolTip("Creates missing mod folders and updates existing ones from the database for the selected game.")
+        self.sync_game_button = PushButton(FluentIcon.SYNC, _i18n.tr("settings.sync_db"))
+        self.sync_game_button.setToolTip(_i18n.tr("settings.sync_tooltip"))
         self.sync_game_button.setEnabled(False)
         sync_layout.addWidget(self.sync_game_button)
         sync_layout.addStretch(1)
@@ -167,22 +205,22 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         path_layout = QHBoxLayout()
         self.launcher_path_edit = LineEdit(self)
         self.launcher_path_edit.setReadOnly(True)
-        self.launcher_path_edit.setPlaceholderText("No launcher path set")
-        browse_button = PushButton("Browse...")
+        self.launcher_path_edit.setPlaceholderText(_i18n.tr("settings.no_launcher"))
+        browse_button = PushButton(_i18n.tr("common.browse"))
         path_layout.addWidget(self.launcher_path_edit, 1)
         path_layout.addWidget(browse_button)
 
-        layout.addRow("Launcher Path:", path_layout)
+        layout.addRow(_i18n.tr("settings.launcher_path"), path_layout)
 
         # -- Widget Auto-play --
-        self.auto_play_checkbox = CheckBox("Auto-play launcher on application startup", self)
+        self.auto_play_checkbox = CheckBox(_i18n.tr("settings.auto_play"), self)
         layout.addRow("", self.auto_play_checkbox)
         self.pages["launcher_tab"] = launcher_widget
 
         self.stack.addWidget(launcher_widget)
         self.pivot.addItem(
             routeKey="launcher_tab",
-            text="Launcher",
+            text=_i18n.tr("settings_launcher.title"),
             onClick=lambda: self._switch_to_tab("launcher_tab"),
             icon=FluentIcon.PLAY_SOLID,
         )
@@ -201,8 +239,8 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         layout.setSpacing(10)
 
         toolbar_layout = QHBoxLayout()
-        self.rename_preset_button = PushButton(FluentIcon.EDIT, "Rename Selected")
-        self.delete_preset_button = PushButton(FluentIcon.DELETE, "Delete Selected")
+        self.rename_preset_button = PushButton(FluentIcon.EDIT, _i18n.tr("settings.rename_preset"))
+        self.delete_preset_button = PushButton(FluentIcon.DELETE, _i18n.tr("settings.delete_preset"))
         toolbar_layout.addWidget(self.rename_preset_button)
         toolbar_layout.addWidget(self.delete_preset_button)
         toolbar_layout.addStretch(1)
@@ -223,8 +261,8 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         layout.addWidget(coming_soon_icon, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addSpacing(5)
 
-        title = TitleLabel("Feature Coming Soon!", presets_widget)
-        subtitle = BodyLabel("Preset management is currently under development.", presets_widget)
+        title = TitleLabel(_i18n.tr("settings.coming_soon"), presets_widget)
+        subtitle = BodyLabel(_i18n.tr("settings.presets_dev"), presets_widget)
         subtitle.setTextColor("#8a8a8a") # Warna abu-abu untuk subteks
 
         layout.addWidget(title, 0, Qt.AlignmentFlag.AlignCenter)
@@ -241,7 +279,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         self.stack.addWidget(presets_widget)
         self.pivot.addItem(
             routeKey="presets_tab",
-            text="Presets",
+            text=_i18n.tr("settings_presets.title"),
             onClick=lambda: self._switch_to_tab("presets_tab"),
             icon=FluentIcon.SAVE,
         )
@@ -345,7 +383,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         """
         selected_items = self.games_table.selectedItems()
         if not selected_items:
-            UiUtils.show_toast(self, "Please select a game to sync.", "warning")
+            UiUtils.show_toast(self, _i18n.tr("settings.please_select_sync"), "warning")
             return
 
         selected_row = selected_items[0].row()
@@ -353,13 +391,10 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         game_name = self.games_table.item(selected_row, 0).text()
 
         # Show a confirmation dialog
-        title = "Confirm Full Sync"
-        content = (f"This will synchronize the mods for '{game_name}' with the database.\n\n"
-                   "• Missing mod folders will be created.\n"
-                   "• Existing mod folders will be updated.\n\n"
-                   "This may take a moment. Are you sure you want to proceed?")
+        title = _i18n.tr("settings.confirm_full_sync_title")
+        content = _i18n.tr("settings.confirm_full_sync_text", name=game_name)
 
-        if UiUtils.show_confirm_dialog(self.window(), title, content, "Yes, Start Sync", "Cancel"):
+        if UiUtils.show_confirm_dialog(self.window(), title, content, _i18n.tr("settings.yes_start_sync"), _i18n.tr("common.cancel")):
             # If confirmed, call the ViewModel to start the process
             self.view_model.initiate_reconciliation_for_game(game_id)
 
@@ -390,7 +425,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         """Flow 1.2: Membuka dialog folder dan meneruskannya ke ViewModel."""
         selected_path = QFileDialog.getExistingDirectory(
             self,
-            "Select Game's Mods Folder",
+            _i18n.tr("settings.title"),
         )
         if selected_path:
             self.view_model.add_game_from_path(Path(selected_path))
@@ -401,7 +436,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         selected_items = self.games_table.selectedItems()
 
         if not selected_items:
-            UiUtils.show_toast(self, "Please select a game to edit.", "warning")
+            UiUtils.show_toast(self, _i18n.tr("settings.select_game_edit"), "warning")
             return
 
         selected_row = selected_items[0].row()
@@ -441,7 +476,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         # 1. Get the selected game from the table
         selected_items = self.games_table.selectedItems()
         if not selected_items:
-            UiUtils.show_toast(self, "Please select a game to remove.", "warning")
+            UiUtils.show_toast(self, _i18n.tr("settings.select_game_remove"), "warning")
             return
 
         selected_row = selected_items[0].row()
@@ -449,8 +484,8 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
         game_name = self.games_table.item(selected_row, 0).text()
 
         # 2. Show a confirmation dialog
-        title = "Confirm Removal"
-        content = f"Are you sure you want to remove '{game_name}'?\n\nThis change will be permanent after you click 'Save'."
+        title = _i18n.tr("settings.confirm_removal_title")
+        content = _i18n.tr("settings.confirm_removal_text", name=game_name)
 
         # We use a standard MessageBox here for confirmation
         confirm_dialog = MessageBox(title, content, self)
@@ -535,7 +570,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
                 new_game_type=updated_data["game_type"]
             )
             # Beri tahu pengguna untuk mencoba menyimpan lagi
-            UiUtils.show_toast(self, f"'{updated_data['name']}' updated. Please click Save again to apply all changes.", "info")
+            UiUtils.show_toast(self, _i18n.tr("settings.edit_then_save", name=updated_data['name']), "info")
 
 
     def _on_game_type_selection_requested(self, proposal: dict, available_types: list[str]):

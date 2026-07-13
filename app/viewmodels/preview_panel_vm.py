@@ -15,6 +15,7 @@ from app.services.thumbnail_service import ThumbnailService
 from app.utils import SystemUtils
 from app.viewmodels.mod_list_vm import ModListViewModel
 from app.utils.async_utils import Worker
+from app.core import i18n as _i18n
 from app.utils.logger_utils import logger
 from app.utils.image_utils import ImageUtils
 
@@ -222,12 +223,12 @@ class PreviewPanelViewModel(QObject):
         logger.info(
             f"Saving description for '{self.current_item_model.actual_name}'..."
         )
-        self.save_description_state.emit("Saving...", False)
+        self.save_description_state.emit(_i18n.tr("common.processing"), False)
 
         # check if path exists
         if not self.current_item_model.folder_path.exists():
             self.toast_requested.emit(
-                "Cannot save description: folder path does not exist.", "error"
+                _i18n.tr("vm.cannot_save_desc_path"), "error"
             )
             return False
 
@@ -269,16 +270,16 @@ class PreviewPanelViewModel(QObject):
     def add_new_thumbnail(self, image_data):
         """Flow 5.2 Part C: Starts the async process to add a new thumbnail."""
         if not self.current_item_model:
-            self.toast_requested.emit("No mod selected.", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.no_mod_selected"), "warning")
             return
         if not image_data:
-            self.toast_requested.emit("No image data to add.", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.no_image_data"), "warning")
             return
 
         # check if path exists
         if not self.current_item_model.folder_path.exists():
             self.toast_requested.emit(
-                "Cannot add thumbnail: folder path does not exist.", "error"
+                _i18n.tr("vm.cannot_add_thumb_path"), "error"
             )
             return
 
@@ -308,7 +309,7 @@ class PreviewPanelViewModel(QObject):
         self.thumbnail_operation_in_progress.emit(False)
 
         if not result.get("success"):
-            error_msg = result.get("error", "An unknown error occurred.")
+            error_msg = result.get("error", _i18n.tr("vm.unknown_error"))
             self.toast_requested.emit(error_msg, "error")
             return
 
@@ -328,7 +329,7 @@ class PreviewPanelViewModel(QObject):
 
         # Update state and refresh UI
         self.current_item_model = new_item_model
-        self.toast_requested.emit("Thumbnails updated successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.thumb_updated"), "success")
         if self.current_item_model:
             self.item_loaded.emit(self._create_dict_from_item(self.current_item_model))
         self.item_metadata_saved.emit(self.current_item_model)
@@ -336,7 +337,7 @@ class PreviewPanelViewModel(QObject):
     def remove_thumbnail(self, image_path: Path):
         """Starts the async process to remove a single thumbnail."""
         if not self.current_item_model:
-            self.toast_requested.emit("No mod selected.", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.no_mod_selected"), "warning")
             return
 
         self._start_thumbnail_operation(
@@ -349,7 +350,7 @@ class PreviewPanelViewModel(QObject):
     def remove_all_thumbnails(self):
         """Starts the async process to remove all thumbnails for the current mod."""
         if not self.current_item_model:
-            self.toast_requested.emit("No mod selected.", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.no_mod_selected"), "warning")
             return
 
         self._start_thumbnail_operation(
@@ -395,7 +396,7 @@ class PreviewPanelViewModel(QObject):
         self.thumbnail_operation_in_progress.emit(False)  # Hide loading indicator
 
         if not result.get("success"):
-            error_msg = result.get("error", "An unknown error occurred.")
+            error_msg = result.get("error", _i18n.tr("vm.unknown_error"))
             self.toast_requested.emit(error_msg, "error")
             return
 
@@ -409,7 +410,7 @@ class PreviewPanelViewModel(QObject):
         self.current_item_model = new_item_model
 
         # 2. Refresh the PreviewPanel UI itself
-        self.toast_requested.emit("Thumbnails updated successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.thumb_updated"), "success")
         if isinstance(self.current_item_model, FolderItem):
             self.item_loaded.emit(self._create_dict_from_item(self.current_item_model))
         else:
@@ -428,7 +429,7 @@ class PreviewPanelViewModel(QObject):
             exc_info=error_info,
         )
         self.toast_requested.emit(
-            "An unexpected error occurred while managing thumbnails.", "error"
+            _i18n.tr("vm.thumb_unexpected_error"), "error"
         )
 
     def _on_thumbnail_operation_timeout(self):
@@ -443,7 +444,7 @@ class PreviewPanelViewModel(QObject):
         self.thumbnail_operation_in_progress.emit(False)
         logger.error("Thumbnail operation timed out after 30 seconds.")
         self.toast_requested.emit(
-            "Thumbnail operation timed out. Please try again.", "error"
+            _i18n.tr("vm.thumb_timeout"), "error"
         )
 
     def on_description_changed(self, text: str):
@@ -571,7 +572,7 @@ class PreviewPanelViewModel(QObject):
             return
 
         logger.info("Saving .ini configuration changes...")
-        self.save_config_state.emit("Saving...", False)
+        self.save_config_state.emit(_i18n.tr("common.processing"), False)
 
         if has_ini_changes:
             worker = Worker(
@@ -584,7 +585,7 @@ class PreviewPanelViewModel(QObject):
         else:
             # Notes-only: save directly instead of routing through INI callback
             self._save_notes()
-            self.save_config_state.emit("Save Configuration", True)
+            self.save_config_state.emit(_i18n.tr("preview.save_config"), True)
             self._notes_dirty = False
             self.ini_dirty_state_changed.emit(False)
 
@@ -622,7 +623,7 @@ class PreviewPanelViewModel(QObject):
         self.ini_config_loading.emit(False)
         logger.error(f"Critical error during .ini parsing:{error_info[1]}")
         self.toast_requested.emit(
-            "A critical error occurred while reading mod configurations.", "error"
+            _i18n.tr("vm.ini_parse_critical"), "error"
         )
         self.ini_config_ready.emit([])  # Send an empty list
 
@@ -659,17 +660,17 @@ class PreviewPanelViewModel(QObject):
             return True
         except Exception as e:
             logger.error("Failed to save notes: %s", e)
-            self.toast_requested.emit("Failed to save notes.", "error")
+            self.toast_requested.emit(_i18n.tr("vm.failed_save_notes"), "error")
             return False
 
     def _on_description_saved(self, result: dict):
         """Handles the result of the description save operation."""
         if not result.get("success"):
-            self.toast_requested.emit(result.get("error", "Failed to save."), "error")
-            self.save_description_state.emit("Save Description", True)
+            self.toast_requested.emit(result.get("error", _i18n.tr("vm.failed_save")), "error")
+            self.save_description_state.emit(_i18n.tr("preview.save_description"), True)
             return
 
-        self.toast_requested.emit("Description saved successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.desc_saved"), "success")
         self._reset_dirty_state()
 
         # Update State with a new model from the safety results
@@ -684,7 +685,7 @@ class PreviewPanelViewModel(QObject):
         of the currently displayed mod.
         """
         if not self.current_item_model:
-            self.toast_requested.emit("No mod selected to toggle.", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.no_mod_toggle"), "warning")
             return
 
         logger.info(
@@ -715,7 +716,7 @@ class PreviewPanelViewModel(QObject):
         Handles the result of the toggle operation and triggers the domino effect.
         """
         if not result.get("success"):
-            error_msg = result.get("error", "Failed to toggle status.")
+            error_msg = result.get("error", _i18n.tr("vm.toggle_failed"))
             self.toast_requested.emit(error_msg, "error")
 
             # Revert the switch in the UI if the operation failed
@@ -738,7 +739,7 @@ class PreviewPanelViewModel(QObject):
             self.item_loaded.emit(self._create_dict_from_item(self.current_item_model))
 
         # START THE DOMINO EFFECT to update the foldergrid
-        self.toast_requested.emit("Status updated successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.status_updated"), "success")
         self.item_metadata_saved.emit(self.current_item_model)
 
     def _reset_dirty_state(self):
@@ -746,7 +747,7 @@ class PreviewPanelViewModel(QObject):
         self._unsaved_description = None
         self.is_description_dirty_changed.emit(False)
         self.save_description_state.emit(
-            "Save Description", True
+            _i18n.tr("preview.save_description"), True
         )  # Reset button text and state
 
         self.is_ini_dirty = False
@@ -754,18 +755,18 @@ class PreviewPanelViewModel(QObject):
         self._notes_dirty = False
         self.ini_dirty_state_changed.emit(False)
         self.save_config_state.emit(
-            "Save Configuration", True
+            _i18n.tr("preview.save_config"), True
         )  # Reset button text and state
 
     def _on_ini_saved(self, result: dict):
         """Handles the result of the .ini configuration save operation."""
         self.save_config_state.emit(
-            "Save Configuration", True
+            _i18n.tr("preview.save_config"), True
         )  # Return the state button
 
         if not result.get("success"):
             errors = result.get("errors", [])
-            error_msg = f"Failed to save{len(errors)}file(s). Check logs for details."
+            error_msg = _i18n.tr("vm.ini_save_failed", count=len(errors))
             self.toast_requested.emit(error_msg, "error")
             return
 
@@ -773,7 +774,7 @@ class PreviewPanelViewModel(QObject):
         if self._notes_dirty:
             self._save_notes()
 
-        self.toast_requested.emit("Configuration saved successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.config_saved"), "success")
         # After successfully saved, update State 'Original' and Reset 'Dirty' Flag
         self.original_keybindings = copy.deepcopy(self.editable_keybindings)
         self._unsaved_ini_changes = {}
@@ -802,7 +803,7 @@ class PreviewPanelViewModel(QObject):
         self.thumbnail_operation_in_progress.emit(False)
 
         if not result.get("success"):
-            error_msg = result.get("error", "An unknown error occurred.")
+            error_msg = result.get("error", _i18n.tr("vm.unknown_error"))
             self.toast_requested.emit(error_msg, "error")
             return
 
@@ -826,8 +827,8 @@ class PreviewPanelViewModel(QObject):
         fallback_warnings = result.get("fallback_warnings", [])
         if fallback_warnings:
             self.toast_requested.emit(
-                f"{len(fallback_warnings)} image(s) were permanently deleted "
-                "(recycle bin unavailable).", "warning"
+                _i18n.tr("vm.perm_deleted_warn", count=len(fallback_warnings)),
+                "warning"
             )
 
         # Update state and refresh UI
@@ -839,7 +840,7 @@ class PreviewPanelViewModel(QObject):
         # For add/remove flows the extra invalidation is harmless.
         self.thumbnail_service.invalidate_cache(self.current_item_model.id)
 
-        self.toast_requested.emit("Thumbnails updated successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.thumb_updated"), "success")
         if isinstance(self.current_item_model, FolderItem):
             self.item_loaded.emit(self._create_dict_from_item(self.current_item_model))
         else:
@@ -856,7 +857,7 @@ class PreviewPanelViewModel(QObject):
         if image_data:
             self.add_new_thumbnail(image_data)
         else:
-            self.toast_requested.emit("No image found in the clipboard.", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.no_clipboard"), "warning")
 
     def set_preview_image_as_cover(self, image_path: Path):
         """Moves the specified image to index 0 so it becomes the mod cover."""

@@ -37,6 +37,8 @@ from qfluentwidgets import (
 from app.viewmodels.preview_panel_vm import PreviewPanelViewModel
 from app.services.thumbnail_service import ThumbnailService
 
+from app.core import i18n as _i18n
+
 # Import custom widgets we've designed
 from app.views.components.thumbnail_widget import ThumbnailSliderWidget
 
@@ -140,17 +142,17 @@ class PreviewPanel(QWidget):
         # ── header ───────────────────────────────────────────────────────────────
         header = QVBoxLayout()
         header.setSpacing(4)
-        self.title_label = SubtitleLabel("No Mod Selected")
+        self.title_label = SubtitleLabel(_i18n.tr("preview.no_mod_selected"))
         self.title_label.setWordWrap(True)
         self.status_switch = SwitchButton()
-        self.status_switch.setOnText("Enabled")
-        self.status_switch.setOffText("Disabled")
+        self.status_switch.setOnText(_i18n.tr("common.enabled"))
+        self.status_switch.setOffText(_i18n.tr("common.disabled"))
         header.addWidget(self.title_label)
         header.addWidget(self.status_switch)
         vbox.addLayout(header)
 
         # ── thumbnail ────────────────────────────────────────────────────────────
-        vbox.addWidget(StrongBodyLabel("Preview Images"))
+        vbox.addWidget(StrongBodyLabel(_i18n.tr("preview.preview_images")))
         self.thumbnail_slider = ThumbnailSliderWidget(self.view_model)
         self.thumbnail_slider.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
@@ -158,9 +160,9 @@ class PreviewPanel(QWidget):
         vbox.addWidget(self.thumbnail_slider)
 
         # ── description ─────────────────────────────────────────────────────────
-        vbox.addWidget(StrongBodyLabel("Description"))
+        vbox.addWidget(StrongBodyLabel(_i18n.tr("preview.description")))
         self.description_editor = TextEdit()
-        self.description_editor.setPlaceholderText("No description available.")
+        self.description_editor.setPlaceholderText(_i18n.tr("preview.no_description"))
         self.description_editor.setMinimumHeight(DESCRIPTION_MIN_HEIGHT)
         self.description_editor.setMaximumHeight(DESCRIPTION_MAX_HEIGHT)
         self.description_editor.setFixedHeight(
@@ -181,12 +183,12 @@ class PreviewPanel(QWidget):
             self.view_model.save_description_editor_height
         )
         vbox.addWidget(self.description_resize_handle)
-        self.save_description_button = PushButton(FluentIcon.SAVE, "Save Description")
+        self.save_description_button = PushButton(FluentIcon.SAVE, _i18n.tr("preview.save_description"))
         self.save_description_button.hide()
         vbox.addWidget(self.save_description_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         # ── config ───────────────────────────────────────────────────────────────
-        vbox.addWidget(StrongBodyLabel("Mod Configuration"))
+        vbox.addWidget(StrongBodyLabel(_i18n.tr("preview.mod_config")))
         cfg_wrap = QWidget()
         cfg_wrap.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -197,7 +199,7 @@ class PreviewPanel(QWidget):
         vbox.addWidget(cfg_wrap)
 
         self.save_config_button = PrimaryPushButton(
-            FluentIcon.SAVE, "Save Configuration"
+            FluentIcon.SAVE, _i18n.tr("preview.save_config")
         )
         self.save_config_button.hide()
         vbox.addWidget(self.save_config_button, 0, Qt.AlignmentFlag.AlignLeft)
@@ -209,7 +211,7 @@ class PreviewPanel(QWidget):
 
         # ── stack pages ──────────────────────────────────────────────────────────
         self.empty_view = BodyLabel(
-            "Select a mod from the grid to see its details",
+            _i18n.tr("preview.empty_hint"),
         )
         self.empty_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack.addWidget(self.empty_view)
@@ -310,7 +312,7 @@ class PreviewPanel(QWidget):
 
         # ── empty state
         if not keybindings:
-            lbl = CaptionLabel("No editable keybindings found in this mod.")
+            lbl = CaptionLabel(_i18n.tr("preview.no_keybindings"))
             lbl.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
             )

@@ -42,6 +42,7 @@ from qfluentwidgets import (
 
 from app.viewmodels.preview_panel_vm import PreviewPanelViewModel
 from app.core.constants import SUPPORTED_IMAGE_EXTENSIONS
+from app.core import i18n as _i18n
 
 THUMB_HEIGHT = 210
 THUMB_SPACING = 8
@@ -54,7 +55,7 @@ class FullSizeImageDialog(QDialog):
 
     def __init__(self, pixmap: QPixmap, title: str = "", parent=None):
         super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle(f"Preview - {title}" if title else "Preview")
+        self.setWindowTitle(_i18n.tr("thumb.preview_title", title=title) if title else _i18n.tr("thumb.preview_default"))
         self.setMinimumSize(400, 300)
 
         self._original_pixmap = pixmap
@@ -238,18 +239,18 @@ class ThumbnailSliderWidget(QWidget):
         control_bar_layout = QHBoxLayout()
         control_bar_layout.setContentsMargins(5, 0, 5, 0)
         control_bar_layout.setSpacing(5)
-        self.index_label = CaptionLabel("0 / 0")
+        self.index_label = CaptionLabel(_i18n.tr("thumb.index", current=0, total=0))
         self.set_cover_button = ToolButton(FluentIcon.PHOTO, self)
-        self.set_cover_button.setToolTip("Set as cover image")
+        self.set_cover_button.setToolTip(_i18n.tr("thumb.set_cover_tooltip"))
         self.set_cover_button.setVisible(False)
         self.add_button = ToolButton(FluentIcon.ADD, self)
-        self.add_button.setToolTip("Add image from file...")
+        self.add_button.setToolTip(_i18n.tr("thumb.add_file_tooltip"))
         self.paste_button = ToolButton(FluentIcon.PASTE, self)
-        self.paste_button.setToolTip("Paste image from clipboard")
+        self.paste_button.setToolTip(_i18n.tr("thumb.paste_tooltip"))
         self.remove_button = ToolButton(FluentIcon.DELETE, self)
-        self.remove_button.setToolTip("Remove selected image")
+        self.remove_button.setToolTip(_i18n.tr("thumb.remove_tooltip"))
         self.clear_all_button = ToolButton(FluentIcon.REMOVE, self)
-        self.clear_all_button.setToolTip("Remove all images")
+        self.clear_all_button.setToolTip(_i18n.tr("thumb.clear_all_tooltip"))
         self.loading_ring = ProgressRing(self)
         self.loading_ring.setFixedSize(16, 16)
         self.loading_ring.setVisible(False)
@@ -272,7 +273,7 @@ class ThumbnailSliderWidget(QWidget):
         null_layout.setSpacing(10)
         null_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        info_label = SubtitleLabel("No Preview Images")
+        info_label = SubtitleLabel(_i18n.tr("thumb.no_images"))
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("color: grey;")
 
@@ -280,9 +281,9 @@ class ThumbnailSliderWidget(QWidget):
         button_layout.setSpacing(10)
 
         self.null_add_button = TransparentPushButton(
-            FluentIcon.ADD, "Add from File...", self
+            FluentIcon.ADD, _i18n.tr("thumb.add_from_file"), self
         )
-        self.null_paste_button = TransparentPushButton(FluentIcon.PASTE, "Paste", self)
+        self.null_paste_button = TransparentPushButton(FluentIcon.PASTE, _i18n.tr("thumb.paste"), self)
 
         button_layout.addStretch(1)
         button_layout.addWidget(self.null_add_button)
@@ -524,7 +525,7 @@ class ThumbnailSliderWidget(QWidget):
     def _update_index_label(self):
         total = len(self._image_paths)
         current = self._selected_index + 1 if total > 0 else 0
-        self.index_label.setText(f"{current} / {total}")
+        self.index_label.setText(_i18n.tr("thumb.index", current=current, total=total))
         self.set_cover_button.setVisible(total > 1)
 
     # --- Drag & Drop Events ---
@@ -558,8 +559,8 @@ class ThumbnailSliderWidget(QWidget):
                 self.view_model.add_new_thumbnail(image_data)
             except IOError as e:
                 InfoBar.error(
-                    "File Error",
-                    f"Could not read dropped file: {e}",
+                    _i18n.tr("thumb.file_error"),
+                    _i18n.tr("thumb.read_dropped_error", error=str(e)),
                     parent=self.window(),
                     position=InfoBarPosition.TOP_RIGHT,
                 )
@@ -569,11 +570,11 @@ class ThumbnailSliderWidget(QWidget):
     def contextMenuEvent(self, event: QContextMenuEvent):
         menu = RoundMenu(parent=self)
 
-        add_action = QAction(FluentIcon.ADD.icon(), "Add Image...", self)
+        add_action = QAction(FluentIcon.ADD.icon(), _i18n.tr("thumb.add_image"), self)
         add_action.triggered.connect(self._on_add_button_clicked)
         menu.addAction(add_action)
 
-        paste_action = QAction(FluentIcon.PASTE.icon(), "Paste from Clipboard", self)
+        paste_action = QAction(FluentIcon.PASTE.icon(), _i18n.tr("thumb.paste_clipboard"), self)
         paste_action.triggered.connect(self._on_paste_button_clicked)
         menu.addAction(paste_action)
 
@@ -582,20 +583,20 @@ class ThumbnailSliderWidget(QWidget):
 
             if len(self._image_paths) > 1:
                 set_cover_action = QAction(
-                    FluentIcon.PHOTO.icon(), "Set as Cover", self
+                    FluentIcon.PHOTO.icon(), _i18n.tr("thumb.set_cover"), self
                 )
                 set_cover_action.triggered.connect(self._on_set_cover_clicked)
                 menu.addAction(set_cover_action)
                 menu.addSeparator()
 
             remove_action = QAction(
-                FluentIcon.DELETE.icon(), "Remove This Image", self
+                FluentIcon.DELETE.icon(), _i18n.tr("thumb.remove_this"), self
             )
             remove_action.triggered.connect(self._on_remove_button_clicked)
             menu.addAction(remove_action)
 
             clear_all_action = QAction(
-                FluentIcon.REMOVE.icon(), "Clear All Images", self
+                FluentIcon.REMOVE.icon(), _i18n.tr("thumb.clear_all"), self
             )
             clear_all_action.triggered.connect(self._on_clear_all_button_clicked)
             menu.addAction(clear_all_action)
@@ -607,7 +608,7 @@ class ThumbnailSliderWidget(QWidget):
     def _on_add_button_clicked(self):
         file_names, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select Preview Images",
+            _i18n.tr("thumb.select_images"),
             "",
             f"Image Files ({' '.join(['*' + ext for ext in SUPPORTED_IMAGE_EXTENSIONS])})",
         )
@@ -622,8 +623,8 @@ class ThumbnailSliderWidget(QWidget):
                 self.view_model.add_new_thumbnail(image_data)
             except IOError as e:
                 InfoBar.error(
-                    "File Error",
-                    f"Could not read image file: {e}",
+                    _i18n.tr("thumb.file_error"),
+                    _i18n.tr("thumb.read_image_error", error=str(e)),
                     parent=self.window(),
                     position=InfoBarPosition.TOP_RIGHT,
                 )
@@ -639,8 +640,8 @@ class ThumbnailSliderWidget(QWidget):
             path_to_remove = self._image_paths[self._selected_index]
 
             reply = MessageBox(
-                "Confirm Deletion",
-                f"Are you sure you want to remove this image?\n({path_to_remove.name})",
+                _i18n.tr("thumb.confirm_delete_title"),
+                _i18n.tr("thumb.confirm_delete_text", name=path_to_remove.name),
                 self.window(),
             )
             if reply.exec():
@@ -655,12 +656,12 @@ class ThumbnailSliderWidget(QWidget):
     def _confirm_clear_all(self):
         """Show confirmation dialog outside the context menu's event loop."""
         reply = MessageBox(
-            "Confirm Clear All",
-            "Are you sure you want to remove ALL preview images for this mod?",
+            _i18n.tr("thumb.confirm_clear_title"),
+            _i18n.tr("thumb.confirm_clear_text"),
             self.window(),
         )
-        reply.yesButton.setText("Yes, Clear All")
-        reply.cancelButton.setText("Cancel")
+        reply.yesButton.setText(_i18n.tr("thumb.yes_clear_all"))
+        reply.cancelButton.setText(_i18n.tr("common.cancel"))
         if reply.exec():
             self.view_model.remove_all_thumbnails()
 

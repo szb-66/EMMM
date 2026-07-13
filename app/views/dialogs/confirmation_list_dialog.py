@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidgetItem
 from qfluentwidgets import ListWidget, PrimaryPushButton, PushButton, SubtitleLabel, BodyLabel, ToolButton, FluentIcon
 from app.views.components.creation_task_widget import CreationTaskWidget
 
+from app.core import i18n as _i18n
+
 class ConfirmationListDialog(QDialog):
     """
     A dialog to show a list of proposed mod creation tasks, allowing the user
@@ -14,18 +16,18 @@ class ConfirmationListDialog(QDialog):
 
     def __init__(self, tasks: List[dict], existing_names: List[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Confirm Mod Creation")
+        self.setWindowTitle(_i18n.tr("confirm_list.title"))
         self.setMinimumWidth(500)
         self.existing_names_lower = [name.lower() for name in existing_names]
         self.task_widgets: List[CreationTaskWidget] = []
 
         # --- UI Components ---
-        title = SubtitleLabel("Review and Confirm", self)
-        info = BodyLabel("The following mods will be created. You can edit the output folder names below.", self)
+        title = SubtitleLabel(_i18n.tr("confirm_list.review"), self)
+        info = BodyLabel(_i18n.tr("confirm_list.info"), self)
 
         self.list_widget = ListWidget(self)
-        self.start_button = PrimaryPushButton("Start Process")
-        cancel_button = PushButton("Cancel")
+        self.start_button = PrimaryPushButton(_i18n.tr("confirm_list.start"))
+        cancel_button = PushButton(_i18n.tr("common.cancel"))
 
         for task in tasks:
             list_item = QListWidgetItem(self.list_widget)

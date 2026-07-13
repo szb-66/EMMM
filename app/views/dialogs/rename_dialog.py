@@ -5,6 +5,8 @@ from typing import List
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
 from qfluentwidgets import LineEdit, PrimaryPushButton, PushButton, BodyLabel
 
+from app.core import i18n as _i18n
+
 class RenameDialog(QDialog):
     """
     A dialog for renaming an item. It provides real-time validation to ensure
@@ -21,7 +23,7 @@ class RenameDialog(QDialog):
         self.user_has_interacted = False
         # ----------------------------------------
 
-        self.setWindowTitle("Rename")
+        self.setWindowTitle(_i18n.tr("rename.title"))
         self.setFixedWidth(350)
 
         # --- Widgets ---
@@ -40,8 +42,8 @@ class RenameDialog(QDialog):
 
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
-        self.ok_button = PrimaryPushButton("Rename")
-        cancel_button = PushButton("Cancel")
+        self.ok_button = PrimaryPushButton(_i18n.tr("common.rename"))
+        cancel_button = PushButton(_i18n.tr("common.cancel"))
         button_layout.addWidget(cancel_button)
         button_layout.addWidget(self.ok_button)
         main_layout.addLayout(button_layout)
@@ -69,14 +71,14 @@ class RenameDialog(QDialog):
         error_message = ""
 
         if not new_name:
-            error_message = "Name cannot be empty."
+            error_message = _i18n.tr("common.name_cannot_be_empty")
         # Only show "not changed" error if the user has actually typed something.
         elif new_name_lower == self.original_name_lower and self.user_has_interacted:
-            error_message = "Name has not been changed."
+            error_message = _i18n.tr("common.name_not_changed")
         elif self.ILLEGAL_CHAR_PATTERN.search(new_name):
-            error_message = 'Name cannot contain: \\ / : * ? " < > |'
+            error_message = _i18n.tr("common.illegal_chars")
         elif new_name_lower in self.other_existing_names:
-            error_message = f"An item named '{new_name}' already exists."
+            error_message = _i18n.tr("common.duplicate_name", name=new_name)
 
         self.validation_label.setText(error_message)
         self.validation_label.setVisible(bool(error_message))

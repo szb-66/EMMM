@@ -21,6 +21,7 @@ from app.utils.ui_utils import UiUtils
 from app.viewmodels.mod_list_vm import ModListViewModel
 from app.views.dialogs.rename_dialog import RenameDialog
 from app.core.constants import EMMM_MOD_MIME_TYPE
+from app.core import i18n as _i18n
 
 
 class FolderGridItemWidget(CardWidget):
@@ -96,7 +97,7 @@ class FolderGridItemWidget(CardWidget):
 
         self.pin_icon = IconWidget(FluentIcon.PIN, self)
         self.pin_icon.setFixedSize(24, 24)
-        self.pin_icon.setToolTip("Pinned")
+        self.pin_icon.setToolTip(_i18n.tr("common.pinned"))
         pin_x = self._thumb_size.width() - self.pin_icon.width() - 8
         pin_y = 8
         self.pin_icon.move(pin_x, pin_y)
@@ -120,9 +121,9 @@ class FolderGridItemWidget(CardWidget):
 
 
         self.status_switch = SwitchButton(self)
-        self.status_switch.setOnText("Enabled")
-        self.status_switch.setOffText("Disabled")
-        self.status_switch.setToolTip("Toggle mod status")
+        self.status_switch.setOnText(_i18n.tr("common.enabled"))
+        self.status_switch.setOffText(_i18n.tr("common.disabled"))
+        self.status_switch.setToolTip(_i18n.tr("foldergrid.toggle_mod"))
 
         status_layout.addWidget(self.status_switch)
 
@@ -226,7 +227,9 @@ class FolderGridItemWidget(CardWidget):
             # Revert to the default stylesheet (or a default border)
             self.setStyleSheet("")
 
-    def show_processing_state(self, is_processing: bool, text: str = "Processing..."):
+    def show_processing_state(self, is_processing: bool, text: str = ""):
+        if text == "":
+            text = _i18n.tr("common.processing")
         """Flow 3.1b, 4.2: Shows a visual indicator that the item is being processed."""
         # Disables controls and can show an overlay with text on the widget.
         self.setEnabled(not is_processing)
@@ -248,7 +251,7 @@ class FolderGridItemWidget(CardWidget):
 
         if not is_enabled:
             # Create the action
-            solo_action = QAction(FluentIcon.FLAG.icon(), "Enable Only This", self)
+            solo_action = QAction(FluentIcon.FLAG.icon(), _i18n.tr("foldergrid.enable_only_this"), self)
 
             # Connect it to a new method in the ViewModel that we will create next
             solo_action.triggered.connect(
@@ -260,7 +263,7 @@ class FolderGridItemWidget(CardWidget):
             menu.addSeparator()
 
         open_folder_action = QAction(
-            FluentIcon.FOLDER.icon(), "Open in File Explorer", self
+            FluentIcon.FOLDER.icon(), _i18n.tr("objectlist.open_explorer"), self
         )
         open_folder_action.triggered.connect(
             lambda: self.view_model.open_in_explorer(self.item_data.get("id") or "")
@@ -269,22 +272,22 @@ class FolderGridItemWidget(CardWidget):
 
         menu.addSeparator()
 
-        pin_action_text = "Unpin" if self.item_data.get("is_pinned") else "Pin"
+        pin_action_text = _i18n.tr("common.unpin") if self.item_data.get("is_pinned") else _i18n.tr("common.pin")
         pin_action = QAction(FluentIcon.PIN.icon(), pin_action_text, self)
         pin_action.triggered.connect(lambda: self.view_model.toggle_pin_status(item_id))
         menu.addAction(pin_action)
 
-        rename_action = QAction(FluentIcon.EDIT.icon(), "Rename...", self)
+        rename_action = QAction(FluentIcon.EDIT.icon(), f"{_i18n.tr('common.rename')}...", self)
         rename_action.triggered.connect(self._on_rename_requested)
         menu.addAction(rename_action)
 
-        delete_action = QAction(FluentIcon.DELETE.icon(), "Delete", self)
+        delete_action = QAction(FluentIcon.DELETE.icon(), _i18n.tr("common.delete"), self)
         delete_action.triggered.connect(self._on_delete_requested)
         menu.addAction(delete_action)
 
         menu.addSeparator()
 
-        new_folder_action = QAction(FluentIcon.FOLDER_ADD.icon(), "New Folder...", self)
+        new_folder_action = QAction(FluentIcon.FOLDER_ADD.icon(), _i18n.tr("foldergrid.new_folder"), self)
         new_folder_action.triggered.connect(self._on_new_folder_requested)
         menu.addAction(new_folder_action)
 
@@ -359,9 +362,9 @@ class FolderGridItemWidget(CardWidget):
     def _prompt_auto_group(self, item_id_a: str, item_id_b: str):
         """Opens a RenameDialog to name the new folder, then triggers auto-group."""
         all_names = self.view_model.get_all_item_names()
-        dialog = RenameDialog("New Folder", all_names, self.window())
-        dialog.setWindowTitle("Create New Folder")
-        dialog.ok_button.setText("Create")
+        dialog = RenameDialog(_i18n.tr("foldergrid.create_new_folder"), all_names, self.window())
+        dialog.setWindowTitle(_i18n.tr("foldergrid.create_new_folder"))
+        dialog.ok_button.setText(_i18n.tr("common.create"))
         if dialog.exec():
             folder_name = dialog.get_new_name()
             self.view_model.auto_group_items([item_id_a, item_id_b], folder_name)
@@ -428,9 +431,9 @@ class FolderGridItemWidget(CardWidget):
     def _on_new_folder_requested(self):
         """Opens a dialog to name a new folder, then asks the ViewModel to create it."""
         all_names = self.view_model.get_all_item_names()
-        dialog = RenameDialog("New Folder", all_names, self.window())
-        dialog.setWindowTitle("Create New Folder")
-        dialog.ok_button.setText("Create")
+        dialog = RenameDialog(_i18n.tr("foldergrid.create_new_folder"), all_names, self.window())
+        dialog.setWindowTitle(_i18n.tr("foldergrid.create_new_folder"))
+        dialog.ok_button.setText(_i18n.tr("common.create"))
         if dialog.exec():
             folder_name = dialog.get_new_name()
             self.view_model.create_new_folder(folder_name)
@@ -453,15 +456,10 @@ class FolderGridItemWidget(CardWidget):
             return
 
         # Create a confirmation dialog using a helper for consistency
-        title = "Confirm Deletion"
-        content = (f"Are you sure you want to move '{item_name}' to the Recycle Bin?\n\n"
-                   "This action cannot be undone directly from the app.")
+        title = _i18n.tr("objectlist.confirm_delete_title")
+        content = _i18n.tr("foldergrid.confirm_delete_text", name=item_name)
 
-        # Using a custom helper from UiUtils is a good practice
-        # If you don't have it, you can use MessageBox directly:
-        # confirm_dialog = MessageBox(title, content, self.window())
-        # if confirm_dialog.exec():
-        if UiUtils.show_confirm_dialog(self.window(), title, content, "Yes, Delete", "Cancel"):
+        if UiUtils.show_confirm_dialog(self.window(), title, content, _i18n.tr("objectlist.yes_delete"), _i18n.tr("common.cancel")):
             # If the user confirms, call the ViewModel method
             self.view_model.delete_item(item_id)
 

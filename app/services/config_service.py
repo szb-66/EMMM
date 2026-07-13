@@ -66,6 +66,13 @@ class ConfigService:
             launcher_path = settings.get("launcher_path")
             auto_play_on_startup = bool(settings.get("auto_play_on_startup", False))
 
+            # language preference (default to zh per user choice)
+            from app.core import i18n as _i18n
+            language = settings.get("language", _i18n.DEFAULT_LANGUAGE)
+            if language not in _i18n.AVAILABLE_LANGUAGES:
+                logger.warning(f"Unknown language '{language}' in config. Falling back to default.")
+                language = _i18n.DEFAULT_LANGUAGE
+
             # --- Parse [ui] object ---
             ui_prefs = data.get("ui", {})
             geometry = tuple(ui_prefs.get("window_geometry")) if "window_geometry" in ui_prefs and ui_prefs.get("window_geometry") is not None else None
@@ -103,6 +110,7 @@ class ConfigService:
                 splitter_sizes=splitter_sizes,
                 description_editor_height=description_editor_height,
                 object_list_view_mode=object_list_view_mode,
+                language=language,
                 # preset will be handled later
             )
 
@@ -147,6 +155,7 @@ class ConfigService:
                     "safe_mode_enabled": config.safe_mode_enabled,
                     "launcher_path": config.launcher_path,
                     "auto_play_on_startup": config.auto_play_on_startup,
+                    "language": config.language,
                 },
                 "ui": {
                     "window_geometry": config.window_geometry,

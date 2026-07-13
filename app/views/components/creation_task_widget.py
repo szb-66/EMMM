@@ -6,6 +6,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QApplication
 from qfluentwidgets import LineEdit, BodyLabel, ToolButton, FluentIcon, CaptionLabel
 
+from app.core import i18n as _i18n
+
 class CreationTaskWidget(QWidget):
     """
     [REVISED] A widget for a single item in the ConfirmationListDialog,
@@ -29,14 +31,14 @@ class CreationTaskWidget(QWidget):
 
         # --- Top Row: Source Info ---
         top_row_layout = QHBoxLayout()
-        from_label = BodyLabel("From:")
+        from_label = BodyLabel(_i18n.tr("creation_task.from"))
         from_label.setStyleSheet("font-weight: bold;")
 
         source_label = CaptionLabel(f"{task_data['source_path'].name}")
         source_label.setToolTip(str(task_data['source_path']))
 
         self.warning_icon = ToolButton(FluentIcon.INFO, self)
-        self.warning_icon.setToolTip("This folder/archive does not appear to contain any .ini files.")
+        self.warning_icon.setToolTip(_i18n.tr("creation_task.ini_warning"))
         self.warning_icon.setVisible(task_data.get("has_ini_warning", False))
 
         top_row_layout.addWidget(from_label)
@@ -78,13 +80,13 @@ class CreationTaskWidget(QWidget):
         error_message = ""
 
         if not name:
-            error_message = "Name cannot be empty."
+            error_message = _i18n.tr("common.name_cannot_be_empty")
         elif self.ILLEGAL_CHAR_PATTERN.search(name):
-            error_message = 'Name cannot contain: \\ / : * ? " < > |'
+            error_message = _i18n.tr("common.illegal_chars")
         elif name_lower in self.existing_names_lower:
-            error_message = "This name already exists in the destination folder."
+            error_message = _i18n.tr("creation_task.exists_in_dest")
         elif name_lower in self.other_proposed_names_lower:
-            error_message = "This name is duplicated in the list above."
+            error_message = _i18n.tr("creation_task.dup_in_list")
 
         is_currently_valid = not bool(error_message)
         self.validation_label.setText(error_message)

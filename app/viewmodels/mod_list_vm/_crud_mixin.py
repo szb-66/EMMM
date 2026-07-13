@@ -9,6 +9,7 @@ from PyQt6.QtCore import QThreadPool
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
 from app.core.constants import CONTEXT_OBJECTLIST, CONTEXT_FOLDERGRID
+from app.core import i18n as _i18n
 
 
 class _CrudMixin:
@@ -50,7 +51,7 @@ class _CrudMixin:
         self.item_processing_finished.emit(item_id, result.get("success", False))
 
         if not result.get("success"):
-            self.toast_requested.emit(result.get("error", "Move failed."), "error")
+            self.toast_requested.emit(result.get("error", _i18n.tr("vm.move_failed")), "error")
             return
 
         new_item = result.get("data")
@@ -60,7 +61,7 @@ class _CrudMixin:
         self.master_list = [i for i in self.master_list if i.id != old_id]
         self.displayed_items = [i for i in self.displayed_items if i.id != old_id]
         self.apply_filters_and_search()
-        self.toast_requested.emit(f"Moved '{new_item.actual_name}' successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.moved", name=new_item.actual_name), "success")
 
     def create_new_folder(self, name: str):
         """Creates an empty folder in the current foldergrid path, then reloads."""
@@ -84,7 +85,7 @@ class _CrudMixin:
 
     def _on_create_folder_finished(self, result: dict):
         if not result.get("success"):
-            self.toast_requested.emit(result.get("error", "Failed to create folder."), "error")
+            self.toast_requested.emit(result.get("error", _i18n.tr("vm.create_folder_failed")), "error")
             return
 
         self._item_to_select_after_load = result["folder_path"].name
@@ -93,7 +94,7 @@ class _CrudMixin:
             game=self.current_game,
             is_new_root=False,
         )
-        self.toast_requested.emit("Folder created.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.folder_created"), "success")
 
     def auto_group_items(self, item_ids: list, folder_name: str):
         """Creates a new folder and moves all items into it, then reloads."""
@@ -129,7 +130,7 @@ class _CrudMixin:
             self.item_processing_finished.emit(mid, result.get("success", False))
 
         if not result.get("success"):
-            self.toast_requested.emit(result.get("error", "Auto-group failed."), "error")
+            self.toast_requested.emit(result.get("error", _i18n.tr("vm.autogroup_failed")), "error")
             return
 
         self._item_to_select_after_load = result["folder_path"].name
@@ -138,7 +139,7 @@ class _CrudMixin:
             game=self.current_game,
             is_new_root=False,
         )
-        self.toast_requested.emit("Items grouped into new folder.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.items_grouped"), "success")
 
     def toggle_item_status(self, item_id: str):
         """
@@ -238,11 +239,11 @@ class _CrudMixin:
                 # move the pinned item to the top.
                 self.apply_filters_and_search()
 
-                self.toast_requested.emit("Pin status updated.", "success")
+                self.toast_requested.emit(_i18n.tr("vm.pin_updated"), "success")
             except Exception as e:
                 logger.error(f"Error updating item state after pin toggle: {e}", exc_info=True)
         else:
-            self.toast_requested.emit(f"Failed to update pin status: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.pin_update_failed", error=result.get('error')), "error")
 
 
     def rename_item(self, item_id: str, new_name: str):
@@ -287,12 +288,12 @@ class _CrudMixin:
         self.item_processing_finished.emit(item_id, result.get("success", False))
 
         if not result.get("success"):
-            self.toast_requested.emit(result.get("error", "An unknown error occurred."), "error")
+            self.toast_requested.emit(result.get("error", _i18n.tr("vm.unknown_error")), "error")
             return
 
         new_item = result.get("data")
         self.update_item_in_list(new_item)
-        self.toast_requested.emit(f"Renamed to '{new_item.actual_name}' successfully.", "success")
+        self.toast_requested.emit(_i18n.tr("vm.renamed", name=new_item.actual_name), "success")
 
         if self.context == CONTEXT_OBJECTLIST and self.last_selected_item_id == item_id:
             self.active_object_modified.emit(new_item)
@@ -307,7 +308,7 @@ class _CrudMixin:
 
         exctype, value, tb = error_info
         logger.critical(f"A worker error occurred while renaming item {item_id}: {value}\n{tb}")
-        self.toast_requested.emit("A critical error occurred during rename. Please check the logs.", "error")
+        self.toast_requested.emit(_i18n.tr("vm.rename_critical"), "error")
 
     def delete_item(self, item_id: str):
         """
@@ -345,7 +346,7 @@ class _CrudMixin:
 
         exctype, value, tb = error_info
         logger.critical(f"A worker error occurred while deleting item {item_id}: {value}\n{tb}")
-        self.toast_requested.emit("A critical error occurred during deletion. Please check the logs.", "error")
+        self.toast_requested.emit(_i18n.tr("vm.delete_critical"), "error")
 
     def open_in_explorer(self, item_id: str):
         """
@@ -361,7 +362,7 @@ class _CrudMixin:
             logger.error(
                 f"Cannot open in explorer: Item with id '{item_id}' not found."
             )
-            self.toast_requested.emit("Could not find the selected item.", "error")
+            self.toast_requested.emit(_i18n.tr("vm.item_not_found"), "error")
             return
 
         # 2. Get the folder path from the item model.
@@ -380,7 +381,7 @@ class _CrudMixin:
         self._processing_ids.discard(item_id)
 
         if not result.get("success"):
-            self.toast_requested.emit(result.get("error", "Unknown error"), "error")
+            self.toast_requested.emit(result.get("error", _i18n.tr("vm.unknown_error")), "error")
             self.item_processing_finished.emit(item_id, False)
             return
 
@@ -453,7 +454,7 @@ class _CrudMixin:
             f"A worker error occurred while toggling item {item_id}: {value}\n{tb}"
         )
         self.toast_requested.emit(
-            "A critical error occurred. Please check the logs.", "error"
+            _i18n.tr("vm.critical_check_logs"), "error"
         )
 
     def _on_delete_finished(self, result: dict):
@@ -471,7 +472,7 @@ class _CrudMixin:
 
         if result.get("success"):
             item_name = result.get("item_name", "Item")
-            self.toast_requested.emit(f"'{item_name}' moved to Recycle Bin.", "success")
+            self.toast_requested.emit(_i18n.tr("vm.recycled", name=item_name), "success")
 
             # Delete the item from both master and displayed lists
             self.master_list = [item for item in self.master_list if item.id != item_id]
@@ -488,6 +489,6 @@ class _CrudMixin:
                 self.active_object_deleted.emit(item_id) # Notify MainWindowViewModel to clear foldergrid
 
         else:
-            self.toast_requested.emit(f"Failed to delete item: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.delete_failed", error=result.get('error')), "error")
 
 

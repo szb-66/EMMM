@@ -10,6 +10,7 @@ from app.models.mod_item_model import ModStatus
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
 from app.core.constants import CONTEXT_FOLDERGRID
+from app.core import i18n as _i18n
 
 
 class _ExclusiveActivationMixin:
@@ -80,11 +81,11 @@ class _ExclusiveActivationMixin:
         self.bulk_operation_finished.emit([]) # Send empty list for no failures
 
         if result.get("success"):
-            self.toast_requested.emit("Mod successfully activated.", "success")
+            self.toast_requested.emit(_i18n.tr("vm.mod_activated"), "success")
             # Request a full refresh to ensure the UI is in sync
             self.list_refresh_requested.emit()
         else:
-            self.toast_requested.emit(f"Operation failed: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.operation_failed", error=result.get('error')), "error")
             # Also request a refresh in case of partial failure, to show the real state
             self.list_refresh_requested.emit()
 

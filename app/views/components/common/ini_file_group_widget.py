@@ -14,6 +14,7 @@ from qfluentwidgets import (
     FluentIcon,
     VBoxLayout,
 )
+from app.core import i18n as _i18n
 
 
 class IniFileGroupWidget(QFrame):
@@ -63,7 +64,7 @@ class IniFileGroupWidget(QFrame):
 
         open_btn = TransparentToolButton(FluentIcon.PENCIL_INK, self)
         open_btn.setFixedSize(24, 24)  # konsisten & tidak melar
-        open_btn.setToolTip(f"open {self.file_path.name}")
+        open_btn.setToolTip(_i18n.tr("ini_group.open_tooltip", name=self.file_path.name))
         open_btn.clicked.connect(lambda: self.open_file_requested.emit(self.file_path))
         h.addWidget(open_btn, 0, Qt.AlignmentFlag.AlignRight)
         main.addWidget(header)

@@ -209,6 +209,10 @@ def main():
         # ---Instantiate Services ---
         # Services with no or minimal dependencies first.
         config_service = ConfigService(config_path)
+        # Apply saved language before any widget constructs (widgets call tr() in __init__).
+        from app.core import i18n as _i18n
+        _initial_cfg = config_service.load_config()
+        _i18n.set_language(_initial_cfg.language)
         game_service = GameService()
         database_service = DatabaseService(schema_path=schema_path, app_path=application_path)
         ini_key_parsing_service = IniKeyParsingService()

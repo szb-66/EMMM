@@ -45,6 +45,7 @@ from app.views.components.foldergrid_widget import FolderGridItemWidget
 from app.views.dialogs.failure_report_dialog import FailureReportDialog
 from app.views.dialogs.password_dialog import PasswordDialog
 from app.views.dialogs.progress_dialog import ProgressDialog
+from app.core import i18n as _i18n
 
 
 class FolderGridPanel(QWidget):
@@ -88,19 +89,19 @@ class FolderGridPanel(QWidget):
 
         # Search
         self.search_bar = SearchLineEdit(self)
-        self.search_bar.setPlaceholderText("Search folder…")
+        self.search_bar.setPlaceholderText(_i18n.tr("foldergrid.search"))
         toolbar.addWidget(self.search_bar)
 
         # Filter dropdown
         self.filter_btn = DropDownToolButton(FluentIcon.FILTER, self)
-        self.filter_btn.setToolTip("Filter")
+        self.filter_btn.setToolTip(_i18n.tr("foldergrid.filter"))
         self.filter_menu = RoundMenu(parent=self)
         self.filter_btn.setMenu(self.filter_menu)
         toolbar.addWidget(self.filter_btn)
 
         # Preset combo
         self.preset_combo = ComboBox(self)
-        self.preset_combo.setPlaceholderText("Apply Preset")
+        self.preset_combo.setPlaceholderText(_i18n.tr("foldergrid.apply_preset"))
         self.preset_combo.setMinimumWidth(150)
         self.preset_combo.setEnabled(False)
         toolbar.addWidget(self.preset_combo)
@@ -108,7 +109,7 @@ class FolderGridPanel(QWidget):
 
         # Shuffle button
         self.randomize_btn = TransparentToolButton(FluentIcon.ROTATE, self)
-        self.randomize_btn.setToolTip("Shuffle mods")
+        self.randomize_btn.setToolTip(_i18n.tr("foldergrid.shuffle"))
         toolbar.addWidget(self.randomize_btn)
         self.randomize_btn.setVisible(False)  # Hide for now, can be enabled later
 
@@ -116,13 +117,13 @@ class FolderGridPanel(QWidget):
         toolbar.addStretch()
 
         # Create Button (Primary, on the far right)
-        self.create_btn = PrimaryDropDownPushButton(FluentIcon.ADD, "Create Mod", self)
-        self.create_btn.setToolTip("Create a new mod from archives or a folder")
+        self.create_btn = PrimaryDropDownPushButton(FluentIcon.ADD, _i18n.tr("foldergrid.create_mod"), self)
+        self.create_btn.setToolTip(_i18n.tr("foldergrid.create_mod_tooltip"))
 
         # Create a menu for the button
         create_menu = RoundMenu(parent=self.create_btn)
-        create_menu.addAction(Action(FluentIcon.ZIP_FOLDER, "Add from Archives...",  triggered=lambda:self._on_add_archives_requested()))
-        create_menu.addAction(Action(FluentIcon.FOLDER, "Add from Folder...", triggered=lambda:self._on_add_folder_requested()))
+        create_menu.addAction(Action(FluentIcon.ZIP_FOLDER, _i18n.tr("foldergrid.add_archives"),  triggered=lambda:self._on_add_archives_requested()))
+        create_menu.addAction(Action(FluentIcon.FOLDER, _i18n.tr("foldergrid.add_folder"), triggered=lambda:self._on_add_folder_requested()))
         self.create_btn.setMenu(create_menu)
 
         toolbar.addWidget(self.create_btn)
@@ -136,7 +137,7 @@ class FolderGridPanel(QWidget):
         result_bar_layout.setContentsMargins(14, 4, 10, 4)
         self.result_label = BodyLabel("...")
         self.clear_filter_button = TransparentToolButton(FluentIcon.CLOSE, self.result_bar_widget)
-        self.clear_filter_button.setToolTip("Clear all filters and search")
+        self.clear_filter_button.setToolTip(_i18n.tr("foldergrid.clear_filters"))
         result_bar_layout.addWidget(self.result_label, 1)
         result_bar_layout.addWidget(self.clear_filter_button)
         self.result_bar_widget.setVisible(False)
@@ -159,7 +160,7 @@ class FolderGridPanel(QWidget):
         self.scroll_area.setWidget(self.grid_widget)
 
         # Placeholder, empty, loading states
-        self.placeholder_label = BodyLabel("Select an object to view mods...", self)
+        self.placeholder_label = BodyLabel(_i18n.tr("foldergrid.select_object"), self)
         self.placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
 
@@ -405,7 +406,7 @@ class FolderGridPanel(QWidget):
         self.filter_widgets.clear()
 
         if not filter_options:
-            action = QAction("No Filters Available", self)
+            action = QAction(_i18n.tr("foldergrid.no_filters"), self)
             action.setEnabled(False)
             self.filter_menu.addAction(action)
             return
@@ -433,14 +434,14 @@ class FolderGridPanel(QWidget):
                 layout.addWidget(tags_widget)
             else: # For Author and other single-select filters
                 combo = ComboBox()
-                combo.addItems(["All"] + options)
+                combo.addItems([_i18n.tr("common.all")] + options)
                 self.filter_widgets[name.lower()] = combo
                 layout.addWidget(combo)
 
         layout.addSpacing(10)
         button_layout = QHBoxLayout()
-        reset_button = PushButton("Reset")
-        apply_button = PrimaryPushButton("Apply")
+        reset_button = PushButton(_i18n.tr("common.reset"))
+        apply_button = PrimaryPushButton(_i18n.tr("common.apply"))
         button_layout.addWidget(reset_button)
         button_layout.addWidget(apply_button)
         layout.addLayout(button_layout)
@@ -460,7 +461,7 @@ class FolderGridPanel(QWidget):
                     active_filters[key] = selected_tags
             elif isinstance(widget_or_list, ComboBox): # Handle ComboBox for Author
                 value = widget_or_list.currentText()
-                if value != "All":
+                if value != _i18n.tr("common.all"):
                     active_filters[key] = value
 
         self.view_model.set_filters(active_filters)
@@ -481,8 +482,7 @@ class FolderGridPanel(QWidget):
     def _on_filter_state_changed(self, show_bar: bool, count: int):
         """Shows or hides the result bar based on the filter state."""
         if show_bar:
-            plural = "s" if count > 1 else ""
-            self.result_label.setText(f"{count} result{plural} found")
+            self.result_label.setText(_i18n.tr("foldergrid.results_found", count=count))
 
         self.result_bar_widget.setVisible(show_bar)
 
@@ -507,18 +507,17 @@ class FolderGridPanel(QWidget):
         disable_names = plan.get("disable_names", [])
 
         # Build a clear and informative message for the user
-        title = "Confirm Action"
-        content = f"This will enable '{item_to_enable_name}'.\n\n"
+        title = _i18n.tr("foldergrid.confirm_action_title")
+        content = _i18n.tr("foldergrid.confirm_action_text", name=item_to_enable_name)
 
         if disable_names:
-            content += "The following currently active mod(s) will be disabled:\n"
             # List up to 5 mods to keep the dialog clean
             for name in disable_names[:5]:
                 content += f"  • {name}\n"
             if len(disable_names) > 5:
-                content += f"  • ...and {len(disable_names) - 5} more.\n"
+                content += _i18n.tr("foldergrid.confirm_action_more", count=len(disable_names) - 5)
 
-        content += "\nDo you want to proceed?"
+        content += _i18n.tr("foldergrid.confirm_action_proceed")
 
         # Create and show the confirmation dialog
         confirm_dialog = MessageBox(title, content, self.window())
@@ -567,7 +566,7 @@ class FolderGridPanel(QWidget):
             return
 
         menu = RoundMenu(parent=self)
-        new_folder_action = QAction(FluentIcon.FOLDER_ADD.icon(), "New Folder...", self)
+        new_folder_action = QAction(FluentIcon.FOLDER_ADD.icon(), _i18n.tr("foldergrid.new_folder"), self)
         new_folder_action.triggered.connect(self._on_new_folder_requested)
         menu.addAction(new_folder_action)
         menu.exec(event.globalPos())
@@ -577,9 +576,9 @@ class FolderGridPanel(QWidget):
         from app.views.dialogs.rename_dialog import RenameDialog
 
         all_names = self.view_model.get_all_item_names()
-        dialog = RenameDialog("New Folder", all_names, self.window())
-        dialog.setWindowTitle("Create New Folder")
-        dialog.ok_button.setText("Create")
+        dialog = RenameDialog(_i18n.tr("foldergrid.create_new_folder"), all_names, self.window())
+        dialog.setWindowTitle(_i18n.tr("foldergrid.create_new_folder"))
+        dialog.ok_button.setText(_i18n.tr("common.create"))
         if dialog.exec():
             folder_name = dialog.get_new_name()
             self.view_model.create_new_folder(folder_name)
@@ -626,7 +625,7 @@ class FolderGridPanel(QWidget):
             if not paths:
                 logger.warning("Drop discarded: no valid local paths in MIME data.")
                 self.view_model.toast_requested.emit(
-                    "Cannot drop: no valid files or folders detected.", "warning"
+                    _i18n.tr("foldergrid.cannot_drop"), "warning"
                 )
                 return
 
@@ -635,14 +634,14 @@ class FolderGridPanel(QWidget):
         except Exception as e:
             logger.error(f"Unhandled error processing drop event: {e}", exc_info=True)
             self.view_model.toast_requested.emit(
-                "Could not process dropped items. See logs for details.", "error"
+                _i18n.tr("foldergrid.process_drop_failed"), "error"
             )
 
     def _on_add_archives_requested(self):
         """Opens a file dialog for multi-selection of archives."""
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select Mod Archives",
+            _i18n.tr("foldergrid.select_archives"),
             "", # Start directory
             "Archives (*.zip *.rar *.7z);;All files (*)"
         )
@@ -657,7 +656,7 @@ class FolderGridPanel(QWidget):
         """Opens a directory dialog to select a single mod folder."""
         folder_path = QFileDialog.getExistingDirectory(
             self,
-            "Select Mod Folder",
+            _i18n.tr("foldergrid.select_folder"),
             "" # Start directory
         )
         if not folder_path:

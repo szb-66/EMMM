@@ -3,17 +3,19 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
 from qfluentwidgets import PasswordLineEdit, PrimaryPushButton, PushButton, BodyLabel
 
+from app.core import i18n as _i18n
+
 class PasswordDialog(QDialog):
     """A simple dialog to ask the user for an archive password."""
     def __init__(self, archive_name: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Password Required")
+        self.setWindowTitle(_i18n.tr("password.title"))
 
-        self.info_label = BodyLabel(f"The archive '{archive_name}' is password-protected.\nPlease enter the password to continue.", self)
+        self.info_label = BodyLabel(_i18n.tr("password.info", name=archive_name), self)
         self.password_edit = PasswordLineEdit(self)
 
-        ok_button = PrimaryPushButton("OK")
-        cancel_button = PushButton("Cancel")
+        ok_button = PrimaryPushButton(_i18n.tr("common.ok"))
+        cancel_button = PushButton(_i18n.tr("common.cancel"))
 
         layout = QVBoxLayout(self)
         button_layout = QHBoxLayout()

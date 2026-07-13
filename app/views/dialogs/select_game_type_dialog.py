@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QWidget
 from PyQt6.QtCore import Qt
 from qfluentwidgets import SubtitleLabel, ComboBox, BodyLabel, PrimaryPushButton, PushButton
 
+from app.core import i18n as _i18n
+
 class SelectGameTypeDialog(QDialog):
     """
     [REVISED] A custom QDialog that prompts the user to select a game type.
@@ -15,7 +17,7 @@ class SelectGameTypeDialog(QDialog):
         super().__init__(parent)
 
         # --- Dialog Setup ---
-        self.setWindowTitle("Select Database Key")
+        self.setWindowTitle(_i18n.tr("select_game_type.title"))
         self.setFixedWidth(400)
 
         # --- 1. Create Main Layout ---
@@ -24,25 +26,22 @@ class SelectGameTypeDialog(QDialog):
         main_layout.setSpacing(15)
 
         # --- 2. Create Widgets ---
-        titleLabel = SubtitleLabel(f"Set Database Key for '{proposal_name}'", self)
-        infoLabel = BodyLabel(
-            "This game needs a 'Database Key (Type)' to link it to its metadata. "
-            "Please select the correct one below.", self
-        )
+        titleLabel = SubtitleLabel(_i18n.tr("select_game_type.set_key", name=proposal_name), self)
+        infoLabel = BodyLabel(_i18n.tr("select_game_type.info"), self)
         infoLabel.setWordWrap(True)
 
         self.game_type_combo = ComboBox(self)
         if available_types:
             self.game_type_combo.addItems(available_types)
         else:
-            self.game_type_combo.setPlaceholderText("No types found in database")
+            self.game_type_combo.setPlaceholderText(_i18n.tr("select_game_type.no_types"))
             self.game_type_combo.setEnabled(False)
 
         # --- 3. Create Button Layout ---
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
-        confirm_button = PrimaryPushButton("Confirm")
-        cancel_button = PushButton("Cancel")
+        confirm_button = PrimaryPushButton(_i18n.tr("common.confirm"))
+        cancel_button = PushButton(_i18n.tr("common.cancel"))
         button_layout.addWidget(cancel_button)
         button_layout.addWidget(confirm_button)
 

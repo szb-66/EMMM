@@ -6,6 +6,7 @@ import subprocess
 from PyQt6.QtCore import QObject, pyqtSignal, QThreadPool, QTimer
 from typing import Optional, List, Dict
 import subprocess as sp
+from app.core import i18n as _i18n
 from app.utils.logger_utils import logger
 from app.utils.async_utils import Worker
 from app.models.mod_item_model import ModType
@@ -101,7 +102,7 @@ class MainWindowViewModel(QObject):
     def start_initial_load(self):
         """Flow 1.1: Kicks off the application loading sequence in a background thread."""
         logger.info("Starting initial configuration load...")
-        self.toast_requested.emit("Loading configuration...", ToastLevel.INFO)
+        self.toast_requested.emit(_i18n.tr("vm.loading_config"), ToastLevel.INFO)
 
         # Create a worker to load config file without blocking the UI
         worker = Worker(self.config_service.load_config)
@@ -119,7 +120,7 @@ class MainWindowViewModel(QObject):
             # This case is highly unlikely in a running app but is good to handle.
             logger.critical("Could not retrieve the global QThreadPool instance.")
             self.toast_requested.emit(
-                "Critical error: Could not start background tasks.", "error"
+                _i18n.tr("vm.critical_threadpool"), "error"
             )
 
     def refresh_all_from_config(self):
@@ -215,7 +216,7 @@ class MainWindowViewModel(QObject):
             self.objectlist_vm.unload_items()
             self.foldergrid_vm.unload_items()
             self.toast_requested.emit(
-                f"Path for {self.active_game.name} is invalid!", "error"
+                _i18n.tr("vm.path_invalid", name=self.active_game.name), "error"
             )
 
     def set_current_game_by_name(self, game_name: str):
@@ -284,7 +285,7 @@ class MainWindowViewModel(QObject):
             self._file_watcher.clear_watch("foldergrid")
             self.foldergrid_vm.unload_items()
             self.toast_requested.emit(
-                f"Path for {object_item.actual_name} is invalid!", "error"
+                _i18n.tr("vm.path_invalid", name=object_item.actual_name), "error"
             )
 
     def toggle_safe_mode(self, is_on: bool):
@@ -316,7 +317,7 @@ class MainWindowViewModel(QObject):
 
         else:
             logger.warning("Refresh requested, but no active game.")
-            self.toast_requested.emit("No active game to refresh.", "info")
+            self.toast_requested.emit(_i18n.tr("vm.no_active_game_refresh"), "info")
 
     # ---Private Slots (for Async/Signal Handling) ---
 
@@ -536,7 +537,7 @@ class MainWindowViewModel(QObject):
             f"An unhandled exception occurred during config load: {value}\n{tb}"
         )
         self.toast_requested.emit(
-            "Error loading configuration. See logs for details.", ToastLevel.ERROR
+            _i18n.tr("vm.error_loading_config"), ToastLevel.ERROR
         )
         # In case of a critical error, we can proceed with a default empty config
 
@@ -805,19 +806,19 @@ class MainWindowViewModel(QObject):
                             if ret != 0:
                                 err = f"Powershell exit code {ret}"
                                 logger.error(f"Fallback elevation failed: {err}")
-                                self.toast_requested.emit(f"Failed to run as admin: {err}", ToastLevel.ERROR)
+                                self.toast_requested.emit(_i18n.tr("vm.run_admin_failed", error=err), ToastLevel.ERROR)
 
                         except Exception as fallback_error:
                             logger.error(f"Fallback elevation failed: {fallback_error}")
-                            self.toast_requested.emit(f"Failed to run launcher (admin): {fallback_error}", ToastLevel.ERROR)
+                            self.toast_requested.emit(_i18n.tr("vm.run_launcher_admin_failed", error=str(fallback_error)), ToastLevel.ERROR)
                     else:
                         logger.error(f"Failed to run launcher: {e}")
-                        self.toast_requested.emit(f"Failed to run launcher: {e}", ToastLevel.ERROR)
+                        self.toast_requested.emit(_i18n.tr("vm.run_launcher_failed", error=str(e)), ToastLevel.ERROR)
                 except Exception as e:
                     logger.error(f"Failed to run launcher: {e}")
-                    self.toast_requested.emit(f"Failed to run launcher: {e}", "error")
+                    self.toast_requested.emit(_i18n.tr("vm.run_launcher_failed", error=str(e)), "error")
             else:
-                self.toast_requested.emit("Launcher path is invalid. Please check settings.", "warning")
+                self.toast_requested.emit(_i18n.tr("vm.launcher_invalid"), "warning")
                 self.play_settings_required.emit()
         else:
             logger.info("Play button clicked, but no launcher path is set. Requesting settings.")

@@ -23,6 +23,7 @@ from app.models.mod_item_model import (
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
 from app.core.constants import CONTEXT_OBJECTLIST, CONTEXT_FOLDERGRID
+from app.core import i18n as _i18n
 
 
 class _LoadMixin:
@@ -35,7 +36,7 @@ class _LoadMixin:
         This version is cleaned up to prevent item stacking and redundant signals.
         """
         if not path or not path.is_dir():
-            self.toast_requested.emit(f"Invalid path provided: {path}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.invalid_path", path=path), "error")
             return
 
         # 1. Race Condition Prevention
@@ -163,7 +164,7 @@ class _LoadMixin:
         self.loading_finished.emit()  # Hide shimmer
 
         if not result["success"]:
-            self.toast_requested.emit(f"Error: {result['error']}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.error_prefix", error=result['error']), "error")
             self.items_updated.emit([])  # Ensure view is empty
             self.load_completed.emit(False)
             return
@@ -281,7 +282,7 @@ class _LoadMixin:
         exctype, value, tb = error_info
         logger.critical(f"Failed to load skeletons: {value}\n{tb}")
         self.toast_requested.emit(
-            "A critical error occurred while loading mods.", "error"
+            _i18n.tr("vm.load_mods_critical"), "error"
         )
 
     def _on_item_hydrated(self, hydrated_item: BaseModItem):

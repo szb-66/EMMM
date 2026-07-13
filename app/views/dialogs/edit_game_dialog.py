@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QDialog, QHBoxLay
 from PyQt6.QtCore import Qt
 from qfluentwidgets import LineEdit, ComboBox, PrimaryPushButton, PushButton, BodyLabel
 
+from app.core import i18n as _i18n
+
 class EditGameDialog(QDialog):
     """
     A dialog to edit the details of a registered game. It supports two modes:
@@ -23,7 +25,7 @@ class EditGameDialog(QDialog):
 
         # ---2. Make all widgets ---
         self.info_label = BodyLabel(
-            "You must select a Mods Type for this game to continue.", self
+            _i18n.tr("edit_game.must_select_type"), self
         )
         self.name_edit = LineEdit(self)
         self.name_edit.setText(game_data.get("name", ""))
@@ -44,20 +46,20 @@ class EditGameDialog(QDialog):
                 self.game_type_combo.setCurrentIndex(0)
         else:
             # if no game types are available, set a placeholder
-            self.game_type_combo.setPlaceholderText("No Types Available")
+            self.game_type_combo.setPlaceholderText(_i18n.tr("edit_game.no_types"))
             self.game_type_combo.setEnabled(False)
 
         # ---3. Create a secondary layout ---
 
         self.form_layout = QFormLayout()
-        self.form_layout.addRow("Name:", self.name_edit)
-        self.form_layout.addRow("Path:", self.path_edit)
-        self.form_layout.addRow("Mods Type:", self.game_type_combo)
+        self.form_layout.addRow(_i18n.tr("common.name"), self.name_edit)
+        self.form_layout.addRow(_i18n.tr("common.path"), self.path_edit)
+        self.form_layout.addRow(_i18n.tr("edit_game.mods_type"), self.game_type_combo)
 
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
-        self.ok_button = PrimaryPushButton("Save")
-        self.cancel_button = PushButton("Cancel")
+        self.ok_button = PrimaryPushButton(_i18n.tr("common.save"))
+        self.cancel_button = PushButton(_i18n.tr("common.cancel"))
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.ok_button)
 
@@ -70,7 +72,7 @@ class EditGameDialog(QDialog):
         # ---5. Apply Handling Mode ---
 
         if force_selection_mode:
-            self.setWindowTitle("Required: Set Database Key")
+            self.setWindowTitle(_i18n.tr("edit_game.require_key"))
             # Hide the unnecessary field
             self.name_edit.setEnabled(False)
 
@@ -83,7 +85,7 @@ class EditGameDialog(QDialog):
             # Hide the Cancel button
             self.cancel_button.setVisible(False)
         else:
-            self.setWindowTitle("Edit Game")
+            self.setWindowTitle(_i18n.tr("edit_game.edit_game"))
             self.info_label.setVisible(False)
 
         self.setFixedWidth(400)

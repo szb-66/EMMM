@@ -26,6 +26,7 @@ from qfluentwidgets import (
 
 # Import ViewModels
 from app.utils.ui_utils import UiUtils
+from app.core import i18n as _i18n
 from app.viewmodels.main_window_vm import MainWindowViewModel
 from app.viewmodels.settings_vm import SettingsViewModel
 
@@ -93,9 +94,9 @@ class MainWindow(FluentWindow):
         left = QHBoxLayout()
         left.setSpacing(10)
         self.gamelist_combo = ComboBox()
-        self.gamelist_combo.setPlaceholderText("Select Game")
+        self.gamelist_combo.setPlaceholderText(_i18n.tr("main.select_game"))
         self.gamelist_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.safe_mode_switch = SwitchButton("Safe Mode")
+        self.safe_mode_switch = SwitchButton(_i18n.tr("main.safe_mode"))
         self.safe_mode_switch.setVisible(False)  # Hide for now, can be enabled later
         left.addWidget(self.gamelist_combo)
         left.addWidget(self.safe_mode_switch)
@@ -103,9 +104,9 @@ class MainWindow(FluentWindow):
         # Right Group
         right = QHBoxLayout()
         right.setSpacing(6)
-        self.refresh_button = PushButton(FluentIcon.SYNC, "Refresh")
-        self.settings_button = PushButton(FluentIcon.SETTING, "Settings")
-        self.play_button = PushButton(FluentIcon.PLAY, "Play")
+        self.refresh_button = PushButton(FluentIcon.SYNC, _i18n.tr("main.refresh"))
+        self.settings_button = PushButton(FluentIcon.SETTING, _i18n.tr("main.settings"))
+        self.play_button = PushButton(FluentIcon.PLAY, _i18n.tr("main.play"))
         self.play_button.setEnabled(False)
         right.addWidget(self.refresh_button)
         right.addWidget(self.settings_button)
@@ -157,13 +158,13 @@ class MainWindow(FluentWindow):
         self.navigationInterface.addItem(
             routeKey='character_filter',  # Unique key for the navigation item
             icon=FluentIcon.PEOPLE,
-            text='Character',
+            text=_i18n.tr("main.character"),
             onClick=lambda: self.main_window_vm.on_category_selected('character')
         )
         self.navigationInterface.addItem(
             routeKey='other_filter',  # Unique key
             icon=FluentIcon.APPLICATION,
-            text='Other',
+            text=_i18n.tr("main.other"),
             onClick=lambda: self.main_window_vm.on_category_selected('other')
         )
 
@@ -215,7 +216,7 @@ class MainWindow(FluentWindow):
         """
         # Determine the title and InfoBar creation method based on the level
         if level == "success":
-            title = "Success"
+            title = _i18n.tr("toast.success")
             InfoBar.success(
                 title=title,
                 content=message,
@@ -224,7 +225,7 @@ class MainWindow(FluentWindow):
                 position=InfoBarPosition.BOTTOM_RIGHT,  # Add this line
             )
         elif level == "warning":
-            title = "Warning"
+            title = _i18n.tr("toast.warning")
             InfoBar.warning(
                 title=title,
                 content=message,
@@ -233,7 +234,7 @@ class MainWindow(FluentWindow):
                 position=InfoBarPosition.BOTTOM_RIGHT,  # Add this line
             )
         elif level == "error":
-            title = "Error"
+            title = _i18n.tr("toast.error")
             InfoBar.error(
                 title=title,
                 content=message,
@@ -242,7 +243,7 @@ class MainWindow(FluentWindow):
                 position=InfoBarPosition.BOTTOM_RIGHT,  # Add this line
             )
         else:  # Default to "info"
-            title = "Info"
+            title = _i18n.tr("toast.info")
             InfoBar.info(
                 title=title,
                 content=message,
@@ -281,7 +282,7 @@ class MainWindow(FluentWindow):
             self.gamelist_combo.setEnabled(True)
         else:
             self.gamelist_combo.setEnabled(False)
-            self.gamelist_combo.setPlaceholderText("No Games Configured")
+            self.gamelist_combo.setPlaceholderText(_i18n.tr("main.no_games"))
 
         self.gamelist_combo.blockSignals(False)
 
@@ -396,7 +397,7 @@ class MainWindow(FluentWindow):
 
                 UiUtils.show_toast(
                     self,
-                    "Game configuration updated. You can now try your action again.",
+                    _i18n.tr("main.game_config_updated"),
                     "success"
                 )
 
@@ -407,10 +408,10 @@ class MainWindow(FluentWindow):
         """
         Flow 5.2 Part A: Prompts the user to confirm discarding unsaved changes.
         """
-        title = "Unsaved Changes"
-        content = "You have unsaved changes. Discard them and continue?"
-        yes_text = "Yes, Discard"
-        cancel_text = "Cancel"
+        title = _i18n.tr("main.unsaved_title")
+        content = _i18n.tr("main.unsaved_text")
+        yes_text = _i18n.tr("main.unsaved_discard")
+        cancel_text = _i18n.tr("common.cancel")
 
         if UiUtils.show_confirm_dialog(self, title, content, yes_text, cancel_text):
             next_item_data = context.get("next_item_data")
@@ -420,7 +421,7 @@ class MainWindow(FluentWindow):
             return
 
 
-    def _on_bulk_operation_started(self, message: str = "Processing..."):
+    def _on_bulk_operation_started(self, message: str = ""):
         """Disables interactions and shows a progress indicator."""
         # Disable all interactive elements to prevent user actions during bulk operations
         self.object_list_panel.setEnabled(False)
@@ -456,7 +457,7 @@ class MainWindow(FluentWindow):
         self.main_window_vm.request_main_refresh()
 
         if failed_items:
-            error_message = f"Bulk operation completed with {len(failed_items)} errors."
+            error_message = _i18n.tr("main.bulk_errors", count=len(failed_items))
             UiUtils.show_toast(self, error_message, "error")
             logger.error(error_message)
 
@@ -465,7 +466,7 @@ class MainWindow(FluentWindow):
         if self.progress_bar_info:
             if total > 0:
                 percentage = int((current / total) * 100)
-                self.progress_bar_info.titleLabel.setText(f"Synchronizing... {percentage}%")
+                self.progress_bar_info.titleLabel.setText(_i18n.tr("main.synchronizing", percent=percentage))
                 if hasattr(self.progress_bar_info, 'progressBar'):
                     self.progress_bar_info.progressBar.setValue(percentage)
 
@@ -478,7 +479,7 @@ class MainWindow(FluentWindow):
         layout = QVBoxLayout(view)
         layout.setContentsMargins(0, 8, 0, 8)
 
-        titleLabel = StrongBodyLabel("Synchronizing...", view)
+        titleLabel = StrongBodyLabel(_i18n.tr("main.synchronizing", percent=0), view)
         progressBar = ProgressBar(view)
         progressBar.setRange(0, 100)
         progressBar.setValue(0)
@@ -519,7 +520,7 @@ class MainWindow(FluentWindow):
         """
         UiUtils.show_toast(
             self,
-            "Launcher path not set. Please configure it first.",
+            _i18n.tr("main.launcher_not_set"),
             "info",
             duration=3000
         )

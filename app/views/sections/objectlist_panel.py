@@ -43,6 +43,7 @@ from PyQt6.QtWidgets import QStyle
 
 from app.views.dialogs.edit_object_dialog import EditObjectDialog
 from app.views.dialogs.sync_selection_dialog import SyncSelectionDialog
+from app.core import i18n as _i18n
 # Import other necessary components...
 
 
@@ -75,21 +76,21 @@ class ObjectListPanel(QWidget):
         toolbar_layout.setHorizontalSpacing(6)
         # set minimumSize toolbar layout
         self.search_bar = SearchLineEdit(self)
-        self.search_bar.setPlaceholderText("Search...")
+        self.search_bar.setPlaceholderText(_i18n.tr("objectlist.search"))
         self.search_bar.setMaximumWidth(160)
 
         self.filter_btn = DropDownToolButton(FluentIcon.FILTER, self)
-        self.filter_btn.setToolTip("Filter")
+        self.filter_btn.setToolTip(_i18n.tr("objectlist.filter"))
         self.filter_menu = RoundMenu(parent=self)
         self.filter_btn.setMenu(self.filter_menu)
 
         toolbar_layout.addWidget(self.search_bar)
         toolbar_layout.addWidget(self.filter_btn)
         self.view_mode_button = TransparentToolButton(FluentIcon.VIEW, self)
-        self.view_mode_button.setToolTip("Switch to card view")
+        self.view_mode_button.setToolTip(_i18n.tr("objectlist.to_card"))
         toolbar_layout.addWidget(self.view_mode_button)
         self.create_button = PrimaryToolButton(FluentIcon.ADD, self)
-        self.create_button.setToolTip("Create new object")
+        self.create_button.setToolTip(_i18n.tr("objectlist.create_new"))
         self.create_button.setEnabled(False)
         toolbar_layout.addWidget(self.create_button)
 
@@ -98,11 +99,11 @@ class ObjectListPanel(QWidget):
         bulk_action_layout = FlowLayout(self.bulk_action_widget, isTight=True)
         bulk_action_layout.setContentsMargins(10, 0, 10, 5)
 
-        self.selection_label = SubtitleLabel("0 selected")
-        self.select_all_button = PushButton("Select All")
-        self.clear_selection_button = PushButton("Clear Selection")
-        self.enable_selected_button = PushButton("Enable Selected")
-        self.disable_selected_button = PushButton("Disable Selected")
+        self.selection_label = SubtitleLabel(_i18n.tr("objectlist.selected", count=0))
+        self.select_all_button = PushButton(_i18n.tr("objectlist.select_all"))
+        self.clear_selection_button = PushButton(_i18n.tr("objectlist.clear_selection"))
+        self.enable_selected_button = PushButton(_i18n.tr("objectlist.enable_selected"))
+        self.disable_selected_button = PushButton(_i18n.tr("objectlist.disable_selected"))
 
         # --- Content Stack (for switching between states) ---
         self.stack = QStackedWidget(self)
@@ -121,13 +122,13 @@ class ObjectListPanel(QWidget):
         self.empty_icon = IconWidget(FluentIcon.SEARCH, self.empty_state_widget)
         self.empty_icon.setFixedSize(48, 48)
 
-        self.empty_title_label = TitleLabel("No Objects Found", self.empty_state_widget)
-        self.empty_subtitle_label = BodyLabel("This category is empty.", self.empty_state_widget)
+        self.empty_title_label = TitleLabel(_i18n.tr("objectlist.no_objects"), self.empty_state_widget)
+        self.empty_subtitle_label = BodyLabel(_i18n.tr("objectlist.category_empty_subtitle"), self.empty_state_widget)
         self.empty_subtitle_label.setAlignment(Qt.AlignmentFlag.AlignBaseline | Qt.AlignmentFlag.AlignCenter)
         self.empty_subtitle_label.setWordWrap(True)
 
         # You can add a button here for a "call to action"
-        self.empty_action_button = PushButton("Create New Object")
+        self.empty_action_button = PushButton(_i18n.tr("objectlist.create_new_object"))
         self.empty_action_button.setVisible(False) # Hide it by default
 
         empty_layout.addStretch(1)
@@ -151,7 +152,7 @@ class ObjectListPanel(QWidget):
 
         self.result_label = BodyLabel("...")
         self.clear_filter_button = TransparentToolButton(FluentIcon.CLOSE, self.result_bar_widget)
-        self.clear_filter_button.setToolTip("Clear all filters and search")
+        self.clear_filter_button.setToolTip(_i18n.tr("objectlist.clear_filters"))
 
         result_bar_layout.addWidget(self.result_label, 1)
         result_bar_layout.addWidget(self.clear_filter_button)
@@ -399,7 +400,7 @@ class ObjectListPanel(QWidget):
 
         if self._view_mode == "card":
             self.view_mode_button.setIcon(FluentIcon.MENU)
-            self.view_mode_button.setToolTip("Switch to list view")
+            self.view_mode_button.setToolTip(_i18n.tr("objectlist.to_list"))
             self.list_widget.setViewMode(QListWidget.ViewMode.IconMode)
             self.list_widget.setMovement(QListWidget.Movement.Static)
             self.list_widget.setResizeMode(QListWidget.ResizeMode.Adjust)
@@ -414,7 +415,7 @@ class ObjectListPanel(QWidget):
             self._update_card_grid_size()
         else:
             self.view_mode_button.setIcon(FluentIcon.VIEW)
-            self.view_mode_button.setToolTip("Switch to card view")
+            self.view_mode_button.setToolTip(_i18n.tr("objectlist.to_card"))
             self.list_widget.setViewMode(QListWidget.ViewMode.ListMode)
             self.list_widget.setMovement(QListWidget.Movement.Static)
             self.list_widget.setResizeMode(QListWidget.ResizeMode.Fixed)
@@ -578,7 +579,7 @@ class ObjectListPanel(QWidget):
         self.filter_widgets.clear()
 
         if not filter_options:
-            action = QAction("No Filters Available", self)
+            action = QAction(_i18n.tr("objectlist.no_filters"), self)
             action.setEnabled(False)
             self.filter_menu.addAction(action)
             return
@@ -594,7 +595,7 @@ class ObjectListPanel(QWidget):
             layout.addWidget(BodyLabel(display_name))
 
             combo = ComboBox()
-            combo.addItems(["All"] + options)
+            combo.addItems([_i18n.tr("common.all")] + options)
 
             # Use the internal key ('rarity') for state persistence and apply
             active_value = self.view_model.active_filters.get(key)
@@ -607,8 +608,8 @@ class ObjectListPanel(QWidget):
 
         layout.addSpacing(10)
         button_layout = QHBoxLayout()
-        reset_button = PushButton("Reset")
-        apply_button = PrimaryPushButton("Apply")
+        reset_button = PushButton(_i18n.tr("common.reset"))
+        apply_button = PrimaryPushButton(_i18n.tr("common.apply"))
         button_layout.addWidget(reset_button)
         button_layout.addWidget(apply_button)
         layout.addLayout(button_layout)
@@ -624,7 +625,7 @@ class ObjectListPanel(QWidget):
         active_filters = {}
         for name, widget in self.filter_widgets.items():
             value = widget.currentText()
-            if value != "All":
+            if value != _i18n.tr("common.all"):
                 # Use lowercase for the key to match model attributes
                 active_filters[name.lower()] = value
 
@@ -660,24 +661,21 @@ class ObjectListPanel(QWidget):
     def _on_filter_state_changed(self, show_bar: bool, count: int):
         """Shows or hides the result bar based on the filter state."""
         if show_bar:
-            plural = "s" if count > 1 else ""
-            self.result_label.setText(f"{count} result{plural} found")
+            self.result_label.setText(_i18n.tr("objectlist.results_found", count=count))
 
         self.result_bar_widget.setVisible(show_bar)
 
     def _on_sync_confirmation_requested(self, missing_objects: list):
         """Receives a request from the ViewModel to show a confirmation dialog."""
-        title = "Confirm Sync"
-        content = (f"Found {len(missing_objects)} new object(s) in the database "
-                    f"that are not in your mods folder.\n\n"
-                    f"Do you want to create folders for all of them?")
+        title = _i18n.tr("objectlist.confirm_sync_title")
+        content = _i18n.tr("objectlist.confirm_sync_text", count=len(missing_objects))
 
         w = MessageBox(title, content, self.window())
         if w.exec():
             # If confirmed, call back to the ViewModel to proceed
             self.view_model.proceed_with_sync(missing_objects)
         else:
-            self.view_model.toast_requested.emit("Sync operation cancelled.", "info")
+            self.view_model.toast_requested.emit(_i18n.tr("objectlist.sync_cancelled"), "info")
 
     def _on_manual_sync_required(self, item_id: str, candidates: list):
         """

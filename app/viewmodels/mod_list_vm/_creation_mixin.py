@@ -13,6 +13,7 @@ from app.models.mod_item_model import FolderItem, ModStatus
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
 from app.core.constants import CONTEXT_OBJECTLIST
+from app.core import i18n as _i18n
 
 
 class _CreationMixin:
@@ -26,7 +27,7 @@ class _CreationMixin:
             return
 
         if not self.current_game or not self.current_game.path.is_dir():
-            self.toast_requested.emit("Cannot create object: Active game path is not set.", "error")
+            self.toast_requested.emit(_i18n.tr("vm.cannot_create_no_path"), "error")
             return
 
         parent_path = self.current_game.path
@@ -88,7 +89,7 @@ class _CreationMixin:
         if successful_count == 1 and failed_count == 0 and cancelled_count == 0 and tasks_info[0].get("type") == "manual":
             created_object_data = tasks_info[0].get("data", {})
             object_name = created_object_data.get("name", "New Mod")
-            self.toast_requested.emit(f"Successfully created '{object_name}'.", "success")
+            self.toast_requested.emit(_i18n.tr("vm.created_success", name=object_name), "success")
             if self.context == CONTEXT_OBJECTLIST:
                 self._item_to_select_after_load = object_name
                 self.object_created.emit(created_object_data)
@@ -96,14 +97,14 @@ class _CreationMixin:
             # 1. Build the summary message
             summary_parts = []
             if successful_count > 0:
-                summary_parts.append(f"{successful_count} created")
+                summary_parts.append(_i18n.tr("vm.created_count", count=successful_count))
             if failed_count > 0:
-                summary_parts.append(f"{failed_count} failed")
+                summary_parts.append(_i18n.tr("vm.failed_count", count=failed_count))
             if cancelled_count > 0:
-                summary_parts.append(f"{cancelled_count} cancelled")
+                summary_parts.append(_i18n.tr("vm.cancelled_count", count=cancelled_count))
 
             logger.info(f"Creation Summary: {', '.join(summary_parts)}")
-            summary_content = "Process finished: " + ", ".join(summary_parts) + "."
+            summary_content = _i18n.tr("vm.process_finished", summary=", ".join(summary_parts))
             level = "success" if failed_count == 0 and cancelled_count == 0 else "warning"
 
             # 2. ALWAYS show the summary toast
@@ -162,7 +163,7 @@ class _CreationMixin:
         self.bulk_operation_finished.emit([])
 
         self.toast_requested.emit(
-            "A critical error occurred during creation. Please check the logs.", "error"
+            _i18n.tr("vm.create_critical"), "error"
         )
 
     def prepare_creation_tasks(self, paths: List[Path]):
@@ -173,7 +174,7 @@ class _CreationMixin:
         if not paths:
             return
 
-        self.toast_requested.emit(f"Analyzing {len(paths)} item(s)...", "info")
+        self.toast_requested.emit(_i18n.tr("vm.analyzing", count=len(paths)), "info")
         logger.info(f"Preparing creation tasks for {len(paths)} source path(s).")
 
         worker = Worker(self.workflow_service.analyze_creation_sources, paths)
@@ -226,7 +227,7 @@ class _CreationMixin:
         # 2. Show toasts for any items that were skipped
         invalid_items = result.get("invalid", [])
         for item in invalid_items:
-            self.toast_requested.emit(f"Skipped '{item['name']}': {item['reason']}", "warning")
+            self.toast_requested.emit(_i18n.tr("vm.skipped", name=item['name'], reason=item['reason']), "warning")
 
         # 3. Emit the final signal with only the valid tasks
         valid_tasks = result.get("valid", [])

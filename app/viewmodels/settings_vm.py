@@ -11,6 +11,7 @@ from app.services.workflow_service import WorkflowService
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
 from app.services.database_service import DatabaseService
+from app.core import i18n as _i18n
 
 class SettingsViewModel(QObject):
     """Manages the state and logic for the transactional Settings dialog."""
@@ -51,6 +52,7 @@ class SettingsViewModel(QObject):
         self.temp_games: list[Game] = []  # A mutable list for game edits
         self.temp_launcher_path: str | None = None
         self.temp_auto_play: bool = False
+        self.temp_language: str = _i18n.DEFAULT_LANGUAGE
         self.temp_presets: dict = {}  # A mutable dict for preset edits
 
     # ---Public Methods (API for the View) ---
@@ -62,6 +64,7 @@ class SettingsViewModel(QObject):
         self.temp_games = list(app_config.games) if app_config else []
         self.temp_launcher_path = app_config.launcher_path
         self.temp_auto_play = app_config.auto_play_on_startup
+        self.temp_language = app_config.language if app_config and app_config.language in _i18n.AVAILABLE_LANGUAGES else _i18n.DEFAULT_LANGUAGE
         # self.temp_presets = dict(app_config.presets) if app_config else {}
 
         # Prepare simple data for the view
@@ -86,9 +89,9 @@ class SettingsViewModel(QObject):
 
         names = [g.name for g in self.temp_games]
         if len(names) != len(set(names)):
-            error_msg = "Cannot save: Duplicate game names found. Please ensure all game names are unique."
+            error_msg = _i18n.tr("settings.duplicate_names")
             logger.error(error_msg)
-            self.error_dialog_requested.emit("Validation Error", error_msg)
+            self.error_dialog_requested.emit(_i18n.tr("settings.validation_error"), error_msg)
             return False
 
         # ---2. Create New Config State ---
@@ -99,14 +102,16 @@ class SettingsViewModel(QObject):
             new_config = AppConfig(
                 games=self.temp_games,
                 launcher_path=self.temp_launcher_path,
-                auto_play_on_startup=self.temp_auto_play
+                auto_play_on_startup=self.temp_auto_play,
+                language=self.temp_language,
             )
         else:
             new_config = dataclasses.replace(
                 self.original_config,
                 games=self.temp_games,
                 launcher_path=self.temp_launcher_path,
-                auto_play_on_startup=self.temp_auto_play
+                auto_play_on_startup=self.temp_auto_play,
+                language=self.temp_language,
                 # presets=self.temp_presets # Add this later
             )
 
@@ -115,11 +120,14 @@ class SettingsViewModel(QObject):
             self.config_service.save_config(new_config)
             self.config_updated.emit()  # Notify MainWindowViewModel
 
+            if self.original_config and self.original_config.language != self.temp_language:
+                self.toast_requested.emit(_i18n.tr("settings_general.saved_restart"), "info")
+
             return True
         except ConfigSaveError as e:
             logger.critical(f"Failed to save configuration: {e}", exc_info=True)
             self.error_dialog_requested.emit(
-                "Save Error", f"Failed to save configuration file.\n\nReason: {e}"
+                _i18n.tr("settings.save_error"), _i18n.tr("settings.save_error_text", error=e)
             )
             return False
 
@@ -138,8 +146,8 @@ class SettingsViewModel(QObject):
             # Case 1: Multiple games found (XXMI structure)
             logger.info(f"XXMI structure detected at {path}.")
             dialog_params = {
-                "title": "XXMI Structure Detected",
-                "text": f"Found {len(detection_result.proposals)} potential games. Import all?",
+                "title": _i18n.tr("settings.xxmi_detected"),
+                "text": _i18n.tr("settings.xxmi_import_text", count=len(detection_result.proposals)),
                 "context": {"proposals": detection_result.proposals}
             }
             self.confirmation_requested.emit(dialog_params)
@@ -149,8 +157,8 @@ class SettingsViewModel(QObject):
             # The context is the same, so the handler doesn't need to change.
             game_name = detection_result.proposals[0].get('name', 'this folder')
             dialog_params = {
-                "title": "Confirm New Game",
-                "text": f"Add '{game_name}' to your games list?",
+                "title": _i18n.tr("settings.confirm_new_game"),
+                "text": _i18n.tr("settings.add_game_text", name=game_name),
                 "context": {"proposals": detection_result.proposals}
             }
             self.confirmation_requested.emit(dialog_params)
@@ -165,7 +173,7 @@ class SettingsViewModel(QObject):
             logger.info("User confirmed XXMI import. Processing all proposals.")
             self.process_individual_proposals(proposals)
         else:  # user cancelled
-            self.toast_requested.emit("Import cancelled.", "info")
+            self.toast_requested.emit(_i18n.tr("settings.import_cancelled"), "info")
 
 
     def process_individual_proposals(self, proposals: list[dict]):
@@ -178,7 +186,7 @@ class SettingsViewModel(QObject):
             existing_paths = {str(g.path) for g in self.temp_games}
             existing_names = {g.name.lower() for g in self.temp_games}
             if proposal["name"].lower() in existing_names or str(proposal["path"]) in existing_paths:
-                self.toast_requested.emit(f"Game '{proposal['name']}' already exists.", "warning")
+                self.toast_requested.emit(_i18n.tr("settings.game_exists", name=proposal['name']), "warning")
                 continue
 
             # If the proposal has a game_type, add it directly
@@ -190,7 +198,7 @@ class SettingsViewModel(QObject):
                 if available_types:
                     self.game_type_selection_requested.emit(proposal, available_types)
                 else:
-                    self.toast_requested.emit("Cannot add game: No game types defined in database.", "error")
+                    self.toast_requested.emit(_i18n.tr("settings.no_game_types_db"), "error")
 
     def set_game_type_and_add(self, proposal: dict, selected_game_type: str):
         """
@@ -220,7 +228,7 @@ class SettingsViewModel(QObject):
             game_type = proposal.get("game_type")
 
             if name.lower() in existing_names or str(path_obj) in existing_paths:
-                self.toast_requested.emit(f"Game '{name}' already exists.", "warning")
+                self.toast_requested.emit(_i18n.tr("settings.game_exists", name=name), "warning")
                 continue
 
             logger.info(f"Adding new game to temporary list: {name} (Type: {game_type}) at {path_obj}")
@@ -298,13 +306,19 @@ class SettingsViewModel(QObject):
         self.temp_auto_play = is_checked
         logger.debug(f"Temporary auto-play state set to: {self.temp_auto_play}")
 
+    def set_temp_language(self, lang_code: str):
+        """Updates the temporary language selection."""
+        if lang_code in _i18n.AVAILABLE_LANGUAGES:
+            self.temp_language = lang_code
+            logger.debug(f"Temporary language set to: {self.temp_language}")
+
     def initiate_reconciliation_for_game(self, game_id: str):
         """
         [NEW] Starts the self-contained reconciliation workflow for a single game.
         """
         game_to_sync = next((g for g in self.temp_games if g.id == game_id), None)
         if not game_to_sync:
-            self.toast_requested.emit(f"Could not find game with ID {game_id} to sync.", "error")
+            self.toast_requested.emit(_i18n.tr("settings.game_to_sync_not_found", id=game_id), "error")
             return
 
         logger.info(f"User initiated reconciliation for game: '{game_to_sync.name}'")
@@ -334,20 +348,21 @@ class SettingsViewModel(QObject):
             updated = result.get("updated", 0)
             failed = result.get("failed", 0)
 
-            summary = f"Sync for '{result.get('game_type')}' complete: {created} created, {updated} updated."
-            level = "success"
+            game_type = result.get('game_type')
             if failed > 0:
-                summary += f" ({failed} failed)."
+                summary = _i18n.tr("settings.sync_with_failed", game_type=game_type, created=created, updated=updated, failed=failed)
                 level = "warning"
-
+            else:
+                summary = _i18n.tr("settings.sync_complete", game_type=game_type, created=created, updated=updated)
+                level = "success"
             self.toast_requested.emit(summary, level)
 
             # Beri tahu MainWindow bahwa ada perubahan dan ia perlu me-refresh
             self.reconciliation_finished.emit()
         elif result.get("error"):
-            self.toast_requested.emit(f"Sync process failed: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.operation_failed", error=result.get('error')), "error")
         else:
-            self.toast_requested.emit("No changes detected during sync.", "info")
+            self.toast_requested.emit(_i18n.tr("settings.no_sync_changes"), "info")
 
     def _on_reconciliation_error(self, error_info: tuple):
         """
@@ -357,7 +372,7 @@ class SettingsViewModel(QObject):
         logger.critical(f"A worker error occurred during reconciliation: {value}\n{tb}")
 
         self.bulk_operation_finished.emit([])
-        self.toast_requested.emit("A critical error occurred during sync. Please check the logs.", "error")
+        self.toast_requested.emit(_i18n.tr("settings.sync_critical_error"), "error")
 
     def rename_preset(self, old_name: str, new_name: str):
         """Flow 6.2.A: Starts the async workflow to rename a preset and update all mods."""

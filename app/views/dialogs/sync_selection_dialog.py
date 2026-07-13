@@ -3,6 +3,7 @@
 from typing import List, Dict
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog, QListWidgetItem
 from qfluentwidgets import ListWidget, PrimaryPushButton, PushButton, SubtitleLabel, BodyLabel, SearchLineEdit
+from app.core import i18n as _i18n
 from app.services.thumbnail_service import ThumbnailService
 from app.views.components.sync_candidate_widget import SyncCandidateWidget
 from app.services.database_service import DatabaseService
@@ -16,7 +17,7 @@ class SyncSelectionDialog(QDialog):
 
     def __init__(self, item_name: str, candidates: List[dict], game_type: str, thumbnail_service: ThumbnailService, database_service: DatabaseService, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Manual Sync Selection")
+        self.setWindowTitle(_i18n.tr("sync_selection.title"))
         self.setFixedWidth(500)
         self.setMinimumHeight(400)
 
@@ -27,12 +28,12 @@ class SyncSelectionDialog(QDialog):
         self.database_service = database_service
 
         # --- UI Components ---
-        title = SubtitleLabel(f"Select a match for '{item_name}'", self)
-        info = BodyLabel("We couldn't find a confident match. Please select the correct entry below, or choose to edit manually.", self)
+        title = SubtitleLabel(_i18n.tr("sync_selection.select_match", name=item_name), self)
+        info = BodyLabel(_i18n.tr("sync_selection.info"), self)
         info.setWordWrap(True)
 
         self.search_bar = SearchLineEdit(self)
-        self.search_bar.setPlaceholderText("Search for a candidate...")
+        self.search_bar.setPlaceholderText(_i18n.tr("sync_selection.search"))
 
         self.candidate_list = ListWidget(self)
         self.candidate_list.setAlternatingRowColors(True)
@@ -50,9 +51,9 @@ class SyncSelectionDialog(QDialog):
             self.candidate_list.addItem(list_item)
             self.candidate_list.setItemWidget(list_item, widget)
 
-        self.sync_button = PrimaryPushButton("Sync with Selected")
-        self.edit_button = PushButton("No Match / Edit Manually...")
-        cancel_button = PushButton("Cancel")
+        self.sync_button = PrimaryPushButton(_i18n.tr("sync_selection.sync_selected"))
+        self.edit_button = PushButton(_i18n.tr("sync_selection.edit_manually"))
+        cancel_button = PushButton(_i18n.tr("common.cancel"))
 
         # --- Layout ---
         main_layout = QVBoxLayout(self)

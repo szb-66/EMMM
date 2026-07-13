@@ -39,3 +39,4 @@ class AppConfig:
     splitter_sizes: tuple[int, int, int] | None = None
     description_editor_height: int | None = None
     object_list_view_mode: str = "list"
+    language: str = "zh"

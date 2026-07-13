@@ -9,6 +9,7 @@ from PyQt6.QtCore import QThreadPool
 from app.models.mod_item_model import ModType
 from app.utils.async_utils import Worker
 from app.utils.logger_utils import logger
+from app.core import i18n as _i18n
 
 
 class _ReconciliationMixin:
@@ -56,7 +57,7 @@ class _ReconciliationMixin:
         # 1. Validate that there is an active game with a valid game_type
         if not self.current_game or not self.current_game.game_type:
             self.toast_requested.emit(
-                "Cannot sync: Active game has no Database Key (Type) set.", "warning"
+                _i18n.tr("vm.cannot_sync_no_type"), "warning"
             )
             return
 
@@ -69,7 +70,7 @@ class _ReconciliationMixin:
         all_db_objects = self.database_service.get_all_objects_for_game(game_type)
 
         if not all_db_objects:
-            self.toast_requested.emit(f"No objects defined in the database for '{game_type}'. Nothing to sync.", "info")
+            self.toast_requested.emit(_i18n.tr("vm.no_objects_in_db", game_type=game_type), "info")
             return
 
         # 3. Start the background worker targeting the new WorkflowService method
@@ -103,14 +104,14 @@ class _ReconciliationMixin:
             failed = result.get("failed", 0)
 
             # Build a summary message
-            summary = f"Reconciliation complete: {created} created, {updated} updated."
             if failed > 0:
-                summary += f" ({failed} failed)."
+                summary = _i18n.tr("vm.reconciliation_with_failed", created=created, updated=updated, failed=failed)
                 self.toast_requested.emit(summary, "warning")
             else:
+                summary = _i18n.tr("vm.reconciliation_complete", created=created, updated=updated)
                 self.toast_requested.emit(summary, "success")
         else:
-            self.toast_requested.emit("Reconciliation process failed to run.", "error")
+            self.toast_requested.emit(_i18n.tr("vm.reconciliation_failed"), "error")
 
         # Always refresh the list to show the final state
         self.list_refresh_requested.emit()
@@ -186,7 +187,7 @@ class _ReconciliationMixin:
 
         if result.get("success"):
             logger.info(f"Type conversion successful for item {item_id}. Reloading object list.")
-            self.toast_requested.emit("Object type converted successfully.", "success")
+            self.toast_requested.emit(_i18n.tr("vm.type_converted"), "success")
 
             # TODO: 1. Find the name of the item to re-select after the refresh
             item_to_reselect = next((item for item in self.master_list if item.id == item_id), None)
@@ -199,7 +200,7 @@ class _ReconciliationMixin:
 
         else:
             # On failure, show an error toast
-            self.toast_requested.emit(f"Failed to convert type: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.convert_failed", error=result.get('error')), "error")
 
     def _on_conversion_error(self, error_info: tuple, item_id: str):
         """
@@ -212,7 +213,7 @@ class _ReconciliationMixin:
         self.item_processing_finished.emit(item_id, False)
 
         # Show a generic error message to the user
-        self.toast_requested.emit("A critical error occurred. Please check the logs.", "error")
+        self.toast_requested.emit(_i18n.tr("vm.critical_check_logs"), "error")
 
 
     def force_sync_with_selection(self, item_id: str, selected_db_data: dict):
@@ -238,7 +239,7 @@ class _ReconciliationMixin:
         match and decides whether to sync automatically or ask for user input.
         """
         if not self.current_game or not self.current_game.game_type:
-            self.toast_requested.emit("Cannot sync: Active game has no Database Key (Type) set.", "error")
+            self.toast_requested.emit(_i18n.tr("vm.cannot_sync_no_type"), "error")
             return
 
         item_to_sync = next((item for item in self.master_list if item.id == item_id), None)
@@ -284,11 +285,11 @@ class _ReconciliationMixin:
         self.item_processing_finished.emit(item_id, result.get("success", False))
 
         if result.get("success"):
-            self.toast_requested.emit("Sync with database successful.", "success")
+            self.toast_requested.emit(_i18n.tr("vm.sync_success"), "success")
             self.thumbnail_service.invalidate_cache(item_id)
             self.list_refresh_requested.emit()
         else:
-            self.toast_requested.emit(f"Sync failed: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.sync_failed", error=result.get('error')), "error")
 
 
     def update_object_item(self, item_id: str, update_data: dict):
@@ -329,7 +330,7 @@ class _ReconciliationMixin:
             updated_item = result.get("data")
             if updated_item:
                 self.update_item_in_list(updated_item)
-                self.toast_requested.emit("Object updated successfully.", "success")
+                self.toast_requested.emit(_i18n.tr("vm.object_updated"), "success")
                 self.thumbnail_service.invalidate_cache(item_id)
                 # Trigger single-item UI refresh, not a full list rebuild.
                 self.item_needs_update.emit(self._create_dict_from_item(updated_item))
@@ -345,5 +346,5 @@ class _ReconciliationMixin:
             return
 
         if not result.get("success"):
-            self.toast_requested.emit(f"Update failed: {result.get('error')}", "error")
+            self.toast_requested.emit(_i18n.tr("vm.update_failed", error=result.get('error')), "error")
 

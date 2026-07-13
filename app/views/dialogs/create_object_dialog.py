@@ -12,6 +12,7 @@ from qfluentwidgets import (
     PrimaryPushButton, PushButton, Pivot, OpacityAniStackedWidget, FluentIcon, ImageLabel
 )
 
+from app.core import i18n as _i18n
 from app.models.mod_item_model import ModType
 from app.utils.image_utils import ImageUtils
 from app.utils.logger_utils import logger
@@ -48,7 +49,7 @@ class CreateObjectDialog(QDialog):
 
     def _init_ui(self):
         """Initializes the UI components and layout."""
-        self.setWindowTitle("Create New Object")
+        self.setWindowTitle(_i18n.tr("create_object.title"))
         self.setFixedWidth(420)
 
         main_layout = QVBoxLayout(self)
@@ -70,8 +71,8 @@ class CreateObjectDialog(QDialog):
         button_layout = QHBoxLayout()
         self.status_label = BodyLabel("")
         self.status_label.setStyleSheet("color: #f97171;") # Fluent error color
-        self.cancel_button = PushButton("Cancel")
-        self.ok_button = PrimaryPushButton("Create")
+        self.cancel_button = PushButton(_i18n.tr("common.cancel"))
+        self.ok_button = PrimaryPushButton(_i18n.tr("common.create"))
 
         button_layout.addWidget(self.status_label)
         button_layout.addStretch(1)
@@ -133,25 +134,25 @@ class CreateObjectDialog(QDialog):
         thumbnail_layout.addWidget(self.thumbnail_preview, 0, Qt.AlignmentFlag.AlignCenter)
 
         thumb_button_layout = QHBoxLayout()
-        self.browse_thumb_button = PushButton("Browse...")
-        self.paste_thumb_button = PushButton("Paste Image")
+        self.browse_thumb_button = PushButton(_i18n.tr("common.browse"))
+        self.paste_thumb_button = PushButton(_i18n.tr("thumb.paste"))
         thumb_button_layout.addWidget(self.browse_thumb_button)
         thumb_button_layout.addWidget(self.paste_thumb_button)
         thumbnail_layout.addLayout(thumb_button_layout)
 
         # --- Add rows to layout ---
-        self.form_layout.addRow("Folder Name:", self.folder_name_edit)
-        self.form_layout.addRow("Object Type:", self.object_type_combo)
-        self.form_layout.addRow("Rarity:", self.rarity_combo)
-        self.form_layout.addRow("Gender:", self.gender_combo)
-        self.form_layout.addRow("Element:", self.element_combo)
-        self.form_layout.addRow("Subtype:", self.subtype_edit)
-        self.form_layout.addRow("Initial Tags:", self.tags_edit)
-        self.form_layout.addRow("Thumbnail:", thumbnail_container)
+        self.form_layout.addRow(_i18n.tr("common.folder_name"), self.folder_name_edit)
+        self.form_layout.addRow(_i18n.tr("common.object_type"), self.object_type_combo)
+        self.form_layout.addRow(_i18n.tr("common.rarity"), self.rarity_combo)
+        self.form_layout.addRow(_i18n.tr("common.gender"), self.gender_combo)
+        self.form_layout.addRow(_i18n.tr("common.element"), self.element_combo)
+        self.form_layout.addRow(_i18n.tr("common.subtype"), self.subtype_edit)
+        self.form_layout.addRow(_i18n.tr("create_object.initial_tags"), self.tags_edit)
+        self.form_layout.addRow(_i18n.tr("common.thumbnail"), thumbnail_container)
         self.stack.addWidget(manual_widget)
         self.pivot.addItem(
             routeKey="manual",
-            text="Create Manually",
+            text=_i18n.tr("create_object.create_manually"),
             onClick=lambda: self.stack.setCurrentWidget(manual_widget),
             icon=FluentIcon.EDIT,
         )
@@ -169,11 +170,11 @@ class CreateObjectDialog(QDialog):
 
         if not self.schema:
             # Case 1: Schema is missing. Sync is impossible.
-            info_text = "Database file (schema.json) is missing or corrupted. Sync feature is disabled."
+            info_text = _i18n.tr("create_object.schema_missing")
             info_label = BodyLabel(info_text, self)
             info_label.setWordWrap(True)
             info_label.setStyleSheet("color: #f97171;")
-            self.sync_button = PrimaryPushButton("Sync Unavailable")
+            self.sync_button = PrimaryPushButton(_i18n.tr("create_object.sync_unavailable"))
             self.sync_button.setEnabled(False)
         else:
             # Case 2: Schema exists. Show the reconciliation info.
@@ -181,16 +182,12 @@ class CreateObjectDialog(QDialog):
             to_update = self.reconciliation_counts.get("to_update", 0)
             total_actions = to_create + to_update
 
-            info_text = (
-                "This action will reconcile your local folders with the database.\n\n"
-                f"• {to_create} new folder(s) will be created.\n"
-                f"• {to_update} existing folder(s) will be updated."
-            )
+            info_text = _i18n.tr("create_object.sync_info", to_create=to_create, to_update=to_update)
 
             info_label = BodyLabel(info_text, self)
             info_label.setWordWrap(True)
 
-            self.sync_button = PrimaryPushButton(f"Start Sync ({total_actions} Actions)")
+            self.sync_button = PrimaryPushButton(_i18n.tr("create_object.start_sync", count=total_actions))
             self.sync_button.setEnabled(total_actions > 0)
 
         layout.addWidget(info_label)
@@ -201,7 +198,7 @@ class CreateObjectDialog(QDialog):
         self.stack.addWidget(sync_page)
         self.pivot.addItem(
             routeKey="sync",
-            text="Sync from Database",
+            text=_i18n.tr("create_object.sync_from_db"),
             onClick=lambda: self.stack.setCurrentWidget(sync_page),
             icon=FluentIcon.SYNC,
         )
@@ -238,7 +235,7 @@ class CreateObjectDialog(QDialog):
 
     def _validate_manual_input(self):
         if not self.schema:
-            self.status_label.setText("Manual creation disabled: database schema is missing.")
+            self.status_label.setText(_i18n.tr("create_object.manual_disabled"))
             self.ok_button.setEnabled(False)
             return
 
@@ -246,13 +243,13 @@ class CreateObjectDialog(QDialog):
         is_valid = True
         error_message = ""
         if not name:
-            error_message = "Folder name cannot be empty."
+            error_message = _i18n.tr("common.name_cannot_be_empty")
             is_valid = False
         elif self.ILLEGAL_CHAR_PATTERN.search(name):
-            error_message = 'Name cannot contain: \\ / : * ? " < > |'
+            error_message = _i18n.tr("common.illegal_chars")
             is_valid = False
         elif name.lower() in self.existing_names:
-            error_message = f"An object named '{name}' already exists."
+            error_message = _i18n.tr("common.duplicate_object", name=name)
             is_valid = False
 
         self.status_label.setText(error_message)
@@ -273,17 +270,10 @@ class CreateObjectDialog(QDialog):
         to_update = self.reconciliation_counts.get("to_update", 0)
 
         # Build a clear confirmation message
-        title = "Confirm Full Sync"
-        content = (
-            "You are about to start a full synchronization with the database.\n\n"
-            f"• Up to {to_create} new object(s) will be created.\n"
-            f"• Up to {to_update} existing object(s) will be updated.\n\n"
-            "This action will modify your local mod folders. Are you sure you want to proceed?"
-        )
+        title = _i18n.tr("create_object.confirm_sync_title")
+        content = _i18n.tr("create_object.confirm_sync_text", to_create=to_create, to_update=to_update)
 
-        # Show the confirmation dialog
-        # Using UiUtils.show_confirm_dialog is a good practice for consistency
-        if UiUtils.show_confirm_dialog(self.window(), title, content, "Yes, Start Sync", "Cancel"):
+        if UiUtils.show_confirm_dialog(self.window(), title, content, _i18n.tr("settings.yes_start_sync"), _i18n.tr("common.cancel")):
             # If the user confirms, set the accepted mode and accept the dialog
             self.accepted_mode = "reconcile"
             self.accept()
@@ -349,7 +339,7 @@ class CreateObjectDialog(QDialog):
         """Opens a file dialog to select a thumbnail image."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Thumbnail Image",
+            _i18n.tr("create_object.select_thumb"),
             "", # Start directory
             "Image Files (*.png *.jpg *.jpeg *.webp)"
         )
@@ -373,7 +363,7 @@ class CreateObjectDialog(QDialog):
         if image is None:
             logger.warning("No valid image found on clipboard.")
             # show toast
-            UiUtils.show_toast(self, "No valid image found on clipboard.", "warning")
+            UiUtils.show_toast(self, _i18n.tr("common.no_clipboard_image"), "warning")
             return
 
         # Convert PIL Image to QImage

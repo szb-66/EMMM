@@ -21,6 +21,7 @@ from app.viewmodels.mod_list_vm import ModListViewModel
 from app.utils.logger_utils import logger
 from app.views.dialogs.edit_object_dialog import EditObjectDialog
 from app.core.constants import EMMM_MOD_MIME_TYPE
+from app.core import i18n as _i18n
 
 class ObjectListItemWidget(QWidget):
     """
@@ -123,7 +124,7 @@ class ObjectListItemWidget(QWidget):
 
         self.pin_icon = IconWidget(FluentIcon.PIN, self)
         self.pin_icon.setFixedSize(16, 16)
-        self.pin_icon.setToolTip("Pinned")
+        self.pin_icon.setToolTip(_i18n.tr("common.pinned"))
         self.pin_icon.hide()
         if self.display_mode == "card":
             self.pin_icon.move(self.width() - 22, 6)
@@ -142,7 +143,7 @@ class ObjectListItemWidget(QWidget):
         self.name_label.setText(actual_name)
 
         is_enabled = self.item_data.get("is_enabled")
-        self.status_text.setText("Enabled" if is_enabled else "Disabled")
+        self.status_text.setText(_i18n.tr("common.enabled") if is_enabled else _i18n.tr("common.disabled"))
         self.status_text.setVisible(self.display_mode == "list")
         self.pin_icon.setVisible(self.item_data.get("is_pinned", False))
 
@@ -169,7 +170,9 @@ class ObjectListItemWidget(QWidget):
         if self.display_mode == "card":
             self.pin_icon.move(max(4, self.width() - 22), 6)
 
-    def show_processing_state(self, is_processing: bool, text: str = "Processing..."):
+    def show_processing_state(self, is_processing: bool, text: str = ""):
+        if text == "":
+            text = _i18n.tr("common.processing")
         """Flow 3.1a, 4.2: Shows a visual indicator that the item is being processed."""
         self.setEnabled(not is_processing)
         if is_processing:
@@ -186,7 +189,7 @@ class ObjectListItemWidget(QWidget):
 
         # ---Enable/dynamic disable/disable action ---
         is_enabled = self.item_data.get("is_enabled", False)
-        action_text = "Disable" if is_enabled else "Enable"
+        action_text = _i18n.tr("common.disable") if is_enabled else _i18n.tr("common.enable")
         action_icon = FluentIcon.REMOVE_FROM if is_enabled else FluentIcon.ACCEPT
 
         toggle_action = QAction(action_icon.icon(), action_text, self)
@@ -201,7 +204,7 @@ class ObjectListItemWidget(QWidget):
 
         # Open in File Explorer action
         open_folder_action = QAction(
-            FluentIcon.FOLDER.icon(), "Open in File Explorer", self
+            FluentIcon.FOLDER.icon(), _i18n.tr("objectlist.open_explorer"), self
         )
         open_folder_action.triggered.connect(
             lambda: self.view_model.open_in_explorer(self.item_data.get("id") or "")
@@ -210,7 +213,7 @@ class ObjectListItemWidget(QWidget):
 
         menu.addSeparator()
 
-        pin_action_text = "Unpin" if self.item_data.get("is_pinned") else "Pin"
+        pin_action_text = _i18n.tr("common.unpin") if self.item_data.get("is_pinned") else _i18n.tr("common.pin")
         pin_action = QAction(FluentIcon.PIN.icon(), pin_action_text, self)
         pin_action.triggered.connect(
             lambda: self.view_model.toggle_pin_status(item_id)
@@ -218,11 +221,11 @@ class ObjectListItemWidget(QWidget):
 
         menu.addAction(pin_action)
 
-        edit_action = QAction(FluentIcon.EDIT.icon(), "Edit...", self)
+        edit_action = QAction(FluentIcon.EDIT.icon(), f"{_i18n.tr('common.edit')}...", self)
         edit_action.triggered.connect(self._on_edit_requested)
         menu.addAction(edit_action)
 
-        convert_menu = RoundMenu("Move to", self)
+        convert_menu = RoundMenu(_i18n.tr("objectlist.move_to"), self)
         convert_menu.setIcon(FluentIcon.MOVE)
 
         current_object_type_str = self.item_data.get("object_type", "Unknown")
@@ -234,7 +237,7 @@ class ObjectListItemWidget(QWidget):
             if mod_type.value == current_object_type_str:
                 action.setEnabled(False)
                 # Add "(current)" for clarity
-                action.setText(f"{mod_type.value} (current)")
+                action.setText(_i18n.tr("objectlist.current", type=mod_type.value))
 
             # Connect triggered signal to the method in the ViewModel
             # We use lambda to forward the item_id and new type
@@ -247,14 +250,14 @@ class ObjectListItemWidget(QWidget):
         # Tambahkan submenu ke menu utama
         menu.addMenu(convert_menu)
 
-        sync_action = QAction(FluentIcon.SYNC.icon(), "Sync with Database...", self)
+        sync_action = QAction(FluentIcon.SYNC.icon(), _i18n.tr("objectlist.sync_with_db"), self)
         sync_action.triggered.connect(
             lambda: self.view_model.initiate_sync_for_item(item_id)
         )
         menu.addAction(sync_action)
         menu.addSeparator()
 
-        delete_action = QAction(FluentIcon.DELETE.icon(), "Delete", self)
+        delete_action = QAction(FluentIcon.DELETE.icon(), _i18n.tr("common.delete"), self)
         delete_action.triggered.connect(self._on_delete_requested)
         menu.addAction(delete_action)
 
@@ -360,10 +363,9 @@ class ObjectListItemWidget(QWidget):
         if not item_id or not item_name:
             return
 
-        title = "Confirm Deletion"
-        content = (f"Are you sure you want to move the object '{item_name}' and all its mods to the Recycle Bin?\n\n"
-                   "This action cannot be undone directly from the app.")
+        title = _i18n.tr("objectlist.confirm_delete_title")
+        content = _i18n.tr("objectlist.confirm_delete_text", name=item_name)
 
-        if UiUtils.show_confirm_dialog(self.window(), title, content, "Yes, Delete", "Cancel"):
+        if UiUtils.show_confirm_dialog(self.window(), title, content, _i18n.tr("objectlist.yes_delete"), _i18n.tr("common.cancel")):
             # If the user confirms, call the ViewModel method
             self.view_model.delete_item(item_id)

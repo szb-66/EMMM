@@ -25,6 +25,7 @@ from app.services.workflow_service import WorkflowService
 from app.utils.system_utils import SystemUtils
 from app.utils.async_utils import debounce
 from app.core.constants import DEBOUNCE_DELAY_MS, CONTEXT_OBJECTLIST, CONTEXT_FOLDERGRID
+from app.core import i18n as _i18n
 
 from app.viewmodels.mod_list_vm._load_mixin import _LoadMixin
 from app.viewmodels.mod_list_vm._filter_mixin import _FilterMixin
@@ -181,5 +182,5 @@ class ModListViewModel(_ThumbnailMixin, _ExclusiveActivationMixin,
 
         exctype, value, tb = error_info
         logger.critical(f"A worker error occurred during '{action}' for item {item_id}: {value}\n{tb}")
-        self.toast_requested.emit(f"A critical error occurred during {action}. Please check logs.", "error")
+        self.toast_requested.emit(_i18n.tr("vm.worker_error_action", action=action), "error")
 
