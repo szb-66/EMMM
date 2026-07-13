@@ -362,8 +362,15 @@ class ObjectListPanel(QWidget):
         self._apply_list_view_mode()
         self._save_view_mode()
         selected_item_id = self.view_model.last_selected_item_id
+        self._dispose_all_items()
         self._last_items_data = self._get_current_view_data()
         self._on_items_updated(self._last_items_data, selected_item_id, activate_selected=False)
+
+    def _dispose_all_items(self):
+        """Drop every cached QListWidgetItem + widget so the next refresh
+        rebuilds them with the current display_mode (card vs list)."""
+        self.list_widget.clear()
+        self._item_widgets.clear()
 
     def _replace_cached_item_data(self, item_data: dict):
         item_id = item_data.get("id")
