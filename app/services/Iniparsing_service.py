@@ -67,7 +67,10 @@ class KeyBinding:
 
     def note_key(self, mod_path: Path) -> str:
         """Storage key for _emm_notes.json: ``relative/path::SectionName``."""
-        rel = self.source_file.relative_to(mod_path)
+        try:
+            rel = self.source_file.relative_to(mod_path)
+        except ValueError:
+            rel = Path(self.source_file.name)
         return f"{rel.as_posix()}{self.NOTE_KEY_SEP}{self.section_name}"
 
 

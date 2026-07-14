@@ -758,6 +758,7 @@ class MainWindowViewModel(QObject):
                 self._on_active_object_invalidated()
 
     def shutdown(self):
+        self.preview_panel_vm._flush_pending_changes_sync()
         for timer in self._watch_debounce_timers.values():
             timer.stop()
         self._file_watcher.stop()

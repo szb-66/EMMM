@@ -184,9 +184,6 @@ class PreviewPanel(QWidget):
             self.view_model.save_description_editor_height
         )
         vbox.addWidget(self.description_resize_handle)
-        self.save_description_button = PushButton(FluentIcon.SAVE, _i18n.tr("preview.save_description"))
-        self.save_description_button.hide()
-        vbox.addWidget(self.save_description_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         # ── config ───────────────────────────────────────────────────────────────
         vbox.addWidget(StrongBodyLabel(_i18n.tr("preview.mod_config")))
@@ -198,12 +195,6 @@ class PreviewPanel(QWidget):
         self.ini_config_layout.setContentsMargins(0, 0, 0, 0)
         self.ini_config_layout.setSpacing(4)
         vbox.addWidget(cfg_wrap)
-
-        self.save_config_button = PrimaryPushButton(
-            FluentIcon.SAVE, _i18n.tr("preview.save_config")
-        )
-        self.save_config_button.hide()
-        vbox.addWidget(self.save_config_button, 0, Qt.AlignmentFlag.AlignLeft)
 
         vbox.addStretch(1)
 
@@ -224,21 +215,9 @@ class PreviewPanel(QWidget):
         # VM -> View
         self.view_model.item_loaded.connect(self._on_item_loaded)
         self.view_model.ini_config_ready.connect(self._on_ini_config_ready)
-        self.view_model.is_description_dirty_changed.connect(
-            self.save_description_button.setVisible
-        )
-        self.view_model.ini_dirty_state_changed.connect(
-            self.save_config_button.setVisible
-        )
-        self.view_model.save_description_state.connect(
-            self._on_save_description_state_changed
-        )
-        self.view_model.save_config_state.connect(self._on_save_config_state_changed)
 
         # View -> VM
         self.description_editor.textChanged.connect(self._on_description_text_changed)
-        self.save_description_button.clicked.connect(self.view_model.save_description)
-        self.save_config_button.clicked.connect(self.view_model.save_ini_config)
         self.status_switch.checkedChanged.connect(
             self.view_model.toggle_current_item_status
         )
@@ -284,8 +263,6 @@ class PreviewPanel(QWidget):
 
         # ── reset transient state ───────────────────────────────────────────────
         self._clear_ini_layout()
-        self.save_description_button.hide()
-        self.save_config_button.hide()
 
         # ── title ───────────────────────────────────────────────────────────────
         full_title = item_data.get("actual_name", "N/A")
@@ -301,7 +278,6 @@ class PreviewPanel(QWidget):
         # ── description ─────────────────────────────────────────────────────────
         desc = item_data.get("description", "")
         self.description_editor.setText(desc)
-        self.save_description_button.hide()
 
         # ── track displayed item ────────────────────────────────────────────────
         self._displayed_item_id = new_id
@@ -353,6 +329,7 @@ class PreviewPanel(QWidget):
             for kb in by_file[ini_path]:
                 widget = KeyBindingWidget(kb, parent=group)
                 widget.value_changed.connect(self.view_model.on_keybinding_edited)
+                widget.editing_finished.connect(self.view_model.save_ini_config)
                 group.add_binding_widget(widget)
 
             self.ini_config_layout.addWidget(group)
@@ -406,18 +383,6 @@ class PreviewPanel(QWidget):
             self.view_model.save_description()
 
         return super().eventFilter(obj, event)
-
-    # ADD THIS SLOT
-    def _on_save_description_state_changed(self, text: str, is_enabled: bool):
-        """Mengubah teks dan status tombol simpan."""
-        self.save_description_button.setText(text)
-        self.save_description_button.setEnabled(is_enabled)
-
-    # ADD THIS NEW SLOT
-    def _on_save_config_state_changed(self, text: str, is_enabled: bool):
-        """Mengubah teks dan status tombol simpan konfigurasi."""
-        self.save_config_button.setText(text)
-        self.save_config_button.setEnabled(is_enabled)
 
     def clear_panel(self):
         """Clears all displayed data from the panel."""

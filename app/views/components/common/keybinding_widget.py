@@ -2,7 +2,7 @@
 
 from typing import List, Dict
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QEvent, pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
@@ -39,6 +39,7 @@ class KeyBindingWidget(QWidget):
     """
 
     value_changed = pyqtSignal(str, str, object, str)
+    editing_finished = pyqtSignal()
 
     def __init__(self, binding_data: KeyBinding, parent: QWidget | None = None):
         super().__init__(parent)
@@ -222,3 +223,16 @@ class KeyBindingWidget(QWidget):
                         self.binding_id, "assignment", v, str(val)
                     )
                 )
+        # install event filters for editing_finished signal
+        self.note_edit.installEventFilter(self)
+        for edit in self.key_edits:
+            edit.installEventFilter(self)
+        for edit in self.back_edits:
+            edit.installEventFilter(self)
+        for widget in self.assignment_widgets.values():
+            widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.FocusOut:
+            self.editing_finished.emit()
+        return super().eventFilter(obj, event)

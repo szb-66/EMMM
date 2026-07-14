@@ -31,10 +31,7 @@ class PreviewPanelViewModel(QObject):
     toast_requested = pyqtSignal(str, str)  # message, level
     # ---Signals for Cross-ViewModel Communication ---
     item_metadata_saved = pyqtSignal(object)
-    save_description_state = pyqtSignal(str, bool)  # text, is_enabled
-    unsaved_changes_prompt_requested = pyqtSignal(dict)
     ini_dirty_state_changed = pyqtSignal(bool)
-    save_config_state = pyqtSignal(str, bool)
     thumbnail_operation_in_progress = pyqtSignal(bool)
 
     def __init__(
@@ -112,24 +109,9 @@ class PreviewPanelViewModel(QObject):
     # This method was called when the new item was selected from the foldergrid
 
     def set_current_item(self, item_data: dict | None):
-        "" "Loading new items, checking changes that have not been stored in advance." ""
-        # ---Unsaved Changes Guard Clause ---
-        if self.is_description_dirty:
-            # Revised: Change the question text to yes/no and remove the button option
-            logger.info("Unsaved changes detected. Requesting confirmation from view.")
-            context = {"next_item_data": item_data}
-            self.unsaved_changes_prompt_requested.emit(context)
-            return
-
+        """Load new item, auto-saving any pending edits first."""
+        self._flush_pending_changes_sync()
         self._load_item(item_data)
-
-    def discard_changes_and_proceed(self, next_item_data: dict | None):
-        """
-        Slots called by view if the user agrees to remove the change.
-        """
-        logger.info("User chose to discard changes. Proceeding with navigation.")
-        self._reset_dirty_state()
-        self._load_item(next_item_data)
 
     def _load_item(self, item_data: dict | None) -> None:
         """Load selected item; parse its .ini files off-UI-thread."""
@@ -223,7 +205,6 @@ class PreviewPanelViewModel(QObject):
         logger.info(
             f"Saving description for '{self.current_item_model.actual_name}'..."
         )
-        self.save_description_state.emit(_i18n.tr("common.processing"), False)
 
         # check if path exists
         if not self.current_item_model.folder_path.exists():
@@ -549,11 +530,6 @@ class PreviewPanelViewModel(QObject):
         logger.info(f"Request to open .ini file:{file_path}")
         self.sys_utils.open_path_in_explorer(file_path)
 
-    def _prompt_for_unsaved_changes(self):
-        """Flow 5.2 Part A: Shows the 'Save/Discard/Cancel' dialog."""
-        # Returns an enum or string indicating user's choice
-        pass
-
     def _load_ini_config_async(self):
         """Flow 5.2 Part A: Starts the background worker to parse .ini files."""
         pass
@@ -572,7 +548,6 @@ class PreviewPanelViewModel(QObject):
             return
 
         logger.info("Saving .ini configuration changes...")
-        self.save_config_state.emit(_i18n.tr("common.processing"), False)
 
         if has_ini_changes:
             worker = Worker(
@@ -585,7 +560,6 @@ class PreviewPanelViewModel(QObject):
         else:
             # Notes-only: save directly instead of routing through INI callback
             self._save_notes()
-            self.save_config_state.emit(_i18n.tr("preview.save_config"), True)
             self._notes_dirty = False
             self.ini_dirty_state_changed.emit(False)
 
@@ -667,7 +641,6 @@ class PreviewPanelViewModel(QObject):
         """Handles the result of the description save operation."""
         if not result.get("success"):
             self.toast_requested.emit(result.get("error", _i18n.tr("vm.failed_save")), "error")
-            self.save_description_state.emit(_i18n.tr("preview.save_description"), True)
             return
 
         self.toast_requested.emit(_i18n.tr("vm.desc_saved"), "success")
@@ -746,24 +719,14 @@ class PreviewPanelViewModel(QObject):
         self.is_description_dirty = False
         self._unsaved_description = None
         self.is_description_dirty_changed.emit(False)
-        self.save_description_state.emit(
-            _i18n.tr("preview.save_description"), True
-        )  # Reset button text and state
 
         self.is_ini_dirty = False
         self._unsaved_ini_changes = {}
         self._notes_dirty = False
         self.ini_dirty_state_changed.emit(False)
-        self.save_config_state.emit(
-            _i18n.tr("preview.save_config"), True
-        )  # Reset button text and state
 
     def _on_ini_saved(self, result: dict):
         """Handles the result of the .ini configuration save operation."""
-        self.save_config_state.emit(
-            _i18n.tr("preview.save_config"), True
-        )  # Return the state button
-
         if not result.get("success"):
             errors = result.get("errors", [])
             error_msg = _i18n.tr("vm.ini_save_failed", count=len(errors))
@@ -884,6 +847,43 @@ class PreviewPanelViewModel(QObject):
         worker.signals.result.connect(self._on_thumbnail_operation_complete)
         worker.signals.error.connect(self._on_thumbnail_operation_error)
         QThreadPool.globalInstance().start(worker)
+
+    def _flush_pending_changes_sync(self):
+        """Synchronously persist all pending edits. No-op if nothing is loaded."""
+        if self.current_item_model is None:
+            return
+        try:
+            if self.is_description_dirty and self._unsaved_description is not None:
+                try:
+                    self.mod_service.update_item_properties(
+                        self.current_item_model, {"description": self._unsaved_description}
+                    )
+                    self.is_description_dirty = False
+                    self._unsaved_description = None
+                    self.is_description_dirty_changed.emit(False)
+                except Exception as e:
+                    logger.error("Failed to save description in sync flush: %s", e)
+                    self.toast_requested.emit(
+                        _i18n.tr("vm.failed_save"), "error"
+                    )
+            if self.is_ini_dirty:
+                try:
+                    self.ini_parsing_service.save_ini_changes(self.editable_keybindings)
+                    if self.current_item_model:
+                        self._ini_cache.pop(self.current_item_model.id, None)
+                    self._unsaved_ini_changes = {}
+                    self.is_ini_dirty = False
+                    self.ini_dirty_state_changed.emit(False)
+                except Exception as e:
+                    logger.error("Failed to save ini config in sync flush: %s", e)
+                    self.toast_requested.emit(
+                        _i18n.tr("vm.ini_save_failed", count=1), "error"
+                    )
+            if self._notes_dirty:
+                self._save_notes()
+                self._notes_dirty = False
+        except Exception as e:
+            logger.error("Unexpected error in sync flush: %s", e)
 
     def clear_panel(self):
         "" "Clean the preview panel." ""

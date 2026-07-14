@@ -205,9 +205,6 @@ class MainWindow(FluentWindow):
         self.folder_grid_panel.item_selected.connect(
             self.main_window_vm.preview_panel_vm.set_current_item
         )
-        self.main_window_vm.preview_panel_vm.unsaved_changes_prompt_requested.connect(
-            self._on_preview_unsaved_changes
-        )
 
     def _on_toast_requested(self, message: str, level: str = "info"):
         """
@@ -403,23 +400,6 @@ class MainWindow(FluentWindow):
 
             else:
                 logger.error("Failed to save the updated game configuration after forced setup.")
-
-    def _on_preview_unsaved_changes(self, context: dict):
-        """
-        Flow 5.2 Part A: Prompts the user to confirm discarding unsaved changes.
-        """
-        title = _i18n.tr("main.unsaved_title")
-        content = _i18n.tr("main.unsaved_text")
-        yes_text = _i18n.tr("main.unsaved_discard")
-        cancel_text = _i18n.tr("common.cancel")
-
-        if UiUtils.show_confirm_dialog(self, title, content, yes_text, cancel_text):
-            next_item_data = context.get("next_item_data")
-            self.main_window_vm.preview_panel_vm.discard_changes_and_proceed(
-                next_item_data
-            )
-            return
-
 
     def _on_bulk_operation_started(self, message: str = ""):
         """Disables interactions and shows a progress indicator."""
