@@ -54,10 +54,8 @@ class ColoredFormatter(logging.Formatter):
         )
 
         # Format location (name, function, line) with cyan color
-        clickable_location_str = f'File "{record.pathname}", line {record.lineno} |  {record.name}:{record.funcName}'
         location = f"{record.name}:{record.funcName}:{record.lineno}"
-        # colored_location = f"{LogColors.CYAN}{location}{LogColors.RESET}"
-        colored_location = f"{LogColors.CYAN}{clickable_location_str}{LogColors.RESET}"
+        colored_location = f"{LogColors.CYAN}{location}{LogColors.RESET}"
 
         # Format the main message with the level color
         message = record.getMessage()  # Ensure message is properly formatted
@@ -133,7 +131,7 @@ def setup_logger(log_dir=None):
 
     # === Console handler (manual coloring) ===
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)  # Process all messages from DEBUG level up
+    console_handler.setLevel(logging.INFO)  # Only INFO and above to stdout; DEBUG goes to file only
     # Use our colored formatter, adjust date format if needed
     console_formatter = ColoredFormatter(
         datefmt="%B %d, %Y > %H:%M:%S"
