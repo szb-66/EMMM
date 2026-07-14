@@ -232,69 +232,36 @@ class ObjectListPanel(QWidget):
         activate_selected: bool = True,
     ):
         """
-        Updates the list view by reusing existing widgets when possible.
-        Only creates/destroys widgets for items that were added/removed.
+        Rebuilds every row from scratch on each items_updated emission.
+        Old widgets are explicitly destroyed to avoid Qt6 item-widget
+        hash corruption from takeItem/addItem reuse.
         """
+        for list_item in self._item_widgets.values():
+            w = self.list_widget.itemWidget(list_item)
+            if w is not None:
+                w.deleteLater()
+        self.list_widget.clear()
+        self._item_widgets.clear()
         self._last_items_data = items_data
 
-        # --- compute diff sets ---
-        new_ids = {item["id"] for item in items_data}
-        old_ids = set(self._item_widgets.keys())
-        removed_ids = old_ids - new_ids
-        kept_ids = old_ids & new_ids
-
-        # --- capture widget references BEFORE detaching (takeItem may
-        #     break the QListWidget → itemWidget association) ---
-        widget_map: dict[str, ObjectListItemWidget] = {}
-        for item_id in kept_ids:
-            list_item = self._item_widgets.get(item_id)
-            if list_item:
-                w = self.list_widget.itemWidget(list_item)
-                if isinstance(w, ObjectListItemWidget):
-                    widget_map[item_id] = w
-
-        # --- detach all items without destroying them ---
-        while self.list_widget.count() > 0:
-            self.list_widget.takeItem(0)
-
-        # --- destroy stale items (widget + QListWidgetItem) ---
-        for rid in removed_ids:
-            list_item = self._item_widgets.pop(rid, None)
-            if list_item:
-                w = self.list_widget.itemWidget(list_item)
-                if w:
-                    w.deleteLater()
-
-        # --- UI Feedback Logic ---
         if not items_data:
             return
 
-        # If there are items, show the list widget.
         self.stack.setCurrentWidget(self.list_widget)
 
-        # --- Re-add in new order ---
         for item_data in items_data:
             item_id = item_data["id"]
-
-            if item_id in kept_ids:
-                # Reuse existing QListWidgetItem + widget, update data
-                list_item = self._item_widgets[item_id]
-                widget = widget_map[item_id]
-                widget.set_data(item_data)
-            else:
-                # Create new QListWidgetItem + widget for added items
-                list_item = QListWidgetItem(self.list_widget)
-                widget = ObjectListItemWidget(
-                    item_data=item_data,
-                    viewmodel=self.view_model,
-                    display_mode=self._view_mode,
-                )
-                widget.item_selected.connect(self._on_list_item_clicked)
-                self.list_widget.setItemWidget(list_item, widget)
-                self._item_widgets[item_id] = list_item
-
+            list_item = QListWidgetItem(self.list_widget)
+            widget = ObjectListItemWidget(
+                item_data=item_data,
+                viewmodel=self.view_model,
+                display_mode=self._view_mode,
+            )
+            widget.item_selected.connect(self._on_list_item_clicked)
             list_item.setSizeHint(self._item_size_hint())
             self.list_widget.addItem(list_item)
+            self.list_widget.setItemWidget(list_item, widget)
+            self._item_widgets[item_id] = list_item
 
         # ---- Handle Programmatic Selection ----
         if item_id_to_select:
@@ -303,7 +270,6 @@ class ObjectListPanel(QWidget):
                 logger.info(f"Programmatically selecting item ID: {item_id_to_select}")
                 self.list_widget.setCurrentItem(list_item_to_select)
 
-                # Beri tahu ViewModel bahwa seleksi sudah diatur di UI
                 self.view_model.set_active_selection(item_id_to_select)
                 selected_data = next(
                     (item for item in items_data if item.get("id") == item_id_to_select),
