@@ -279,6 +279,12 @@ class ObjectListItemWidget(QWidget):
         else:
             super().dragEnterEvent(event)
 
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(EMMM_MOD_MIME_TYPE):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
     def dropEvent(self, event):
         """Moves a dropped mod into this character's root folder via cross-VM signal."""
         mime = event.mimeData()

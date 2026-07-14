@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import List
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt, QByteArray
+from PyQt6.QtGui import QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent
 from qfluentwidgets import BreadcrumbBar
 from app.utils.logger_utils import logger
+from app.core.constants import EMMM_MOD_MIME_TYPE
 
 
 class BreadcrumbWidget(QWidget):
@@ -18,11 +20,13 @@ class BreadcrumbWidget(QWidget):
     """
 
     navigation_requested = pyqtSignal(Path)
+    drop_requested = pyqtSignal(str, object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.root_path: Path | None = None
         self._segment_paths: List[Path] = []
+        self._hover_index: int | None = None
         self._init_ui()
 
     def _init_ui(self):
@@ -32,6 +36,7 @@ class BreadcrumbWidget(QWidget):
         self.breadcrumb = BreadcrumbBar(self)
         self.breadcrumb.currentIndexChanged.connect(self._on_segment_clicked)
         main_layout.addWidget(self.breadcrumb)
+        self.setAcceptDrops(True)
 
     def _build_from_path(self, current_path: Path):
         """Private helper to rebuild the UI from a given path and the current root."""
@@ -73,6 +78,79 @@ class BreadcrumbWidget(QWidget):
         if 0 <= index < len(self._segment_paths):
             path_to_navigate = self._segment_paths[index]
             self.navigation_requested.emit(path_to_navigate)
+
+    # --- Drag-and-drop support (ancestor-directory moves) ---
+
+    def _clear_hover(self):
+        if self._hover_index is not None and 0 <= self._hover_index < len(self.breadcrumb.items):
+            item = self.breadcrumb.items[self._hover_index]
+            item.isHover = False
+            item.update()
+        self._hover_index = None
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasFormat(EMMM_MOD_MIME_TYPE):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        if not event.mimeData().hasFormat(EMMM_MOD_MIME_TYPE):
+            super().dragMoveEvent(event)
+            return
+
+        # ponytail: linear scan over ≤ ~8 breadcrumb segments per dragMoveEvent;
+        # if deep folders ever push this higher, precompute a [(rect, index)] list
+        # in _build_from_path and reuse it here.
+        pos = self.breadcrumb.mapFrom(self, event.position().toPoint())
+        last_index = len(self._segment_paths) - 1
+        hit_index = None
+        for i, item in enumerate(self.breadcrumb.items):
+            if not item.isVisible():
+                continue
+            # skip the elideButton (it's not a BreadcrumbItem — no index attr)
+            if not hasattr(item, "index"):
+                continue
+            if item.geometry().contains(pos):
+                if i < last_index:
+                    hit_index = i
+                break
+
+        if hit_index is not None:
+            if self._hover_index != hit_index:
+                self._clear_hover()
+                self._hover_index = hit_index
+                self.breadcrumb.items[hit_index].isHover = True
+                self.breadcrumb.items[hit_index].update()
+            event.acceptProposedAction()
+        else:
+            self._clear_hover()
+            event.ignore()
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent):
+        self._clear_hover()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event: QDropEvent):
+        mime = event.mimeData()
+        if not mime.hasFormat(EMMM_MOD_MIME_TYPE):
+            super().dropEvent(event)
+            return
+
+        hover = self._hover_index
+        self._clear_hover()
+
+        if hover is None or hover >= len(self._segment_paths) - 1:
+            event.ignore()
+            return
+
+        dropped_id = bytes(mime.data(EMMM_MOD_MIME_TYPE)).decode("utf-8")
+        if not dropped_id:
+            event.ignore()
+            return
+
+        self.drop_requested.emit(dropped_id, self._segment_paths[hover])
+        event.acceptProposedAction()
 
     # --- Public Methods ---
 
