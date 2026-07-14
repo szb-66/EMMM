@@ -132,4 +132,18 @@ target_wrapper.*
 # Project-specific
 app/logs/
 config.json
+
+# AI tool configs
+.claude/
+.codex/
+.opencode/
+CLAUDE.md
+
+# Docs
+docs/
+README.md
+
+# Tests
+tests/
+_test_thumbs/
 openspec/
