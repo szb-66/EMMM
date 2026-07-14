@@ -77,6 +77,7 @@ class SettingsDialog(QDialog):  # Inherit from fluent Dialog
 
         # Set initial tab AFTER items have been added
         self.pivot.setCurrentItem("games_tab")
+        self.stack.setCurrentWidget(self.pages["games_tab"])
 
         # ---Assemble Layout ---
 

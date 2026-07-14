@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QFrame,
+    QStackedWidget,
 )
 from PyQt6.QtGui import QAction
 from qfluentwidgets import (
@@ -23,7 +24,6 @@ from qfluentwidgets import (
     ComboBox,
     ScrollArea,
     BodyLabel,
-    PopUpAniStackedWidget,
     RoundMenu,
     PrimaryPushButton,
     PushButton,
@@ -150,7 +150,7 @@ class FolderGridPanel(QWidget):
         main_layout.addWidget(separator)
 
         # Stacked content area
-        self.stack = PopUpAniStackedWidget(self)
+        self.stack = QStackedWidget(self)
         self.scroll_area = ScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -231,6 +231,9 @@ class FolderGridPanel(QWidget):
         )
         self.breadcrumb_widget.navigation_requested.connect(
             self._on_breadcrumb_navigation
+        )
+        self.breadcrumb_widget.drop_requested.connect(
+            self.view_model.move_item_to_folder
         )
         self.search_bar.textChanged.connect(self.view_model.on_search_query_changed)
 

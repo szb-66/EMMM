@@ -87,6 +87,7 @@ class KeyBindingWidget(QWidget):
         h_layout.setSpacing(8)
 
         section_label = StrongBodyLabel(self.binding_data.section_name)
+        section_label.setWordWrap(True)
         h_layout.addWidget(section_label)
         h_layout.addStretch(1)
 
@@ -151,12 +152,13 @@ class KeyBindingWidget(QWidget):
         row.setSpacing(8)
 
         lbl = BodyLabel(_i18n.tr("keybinding.field_label", text=text))
-        lbl.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        lbl.setWordWrap(True)
+        lbl.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         lbl.setStyleSheet("background: transparent; border: none; color: rgba(255,255,255,0.7);")
 
         field.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
-        row.addWidget(lbl)
+        row.addWidget(lbl, 1)
         row.addWidget(field, FIELD_STRETCH)
         return row
 

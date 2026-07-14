@@ -134,7 +134,7 @@ class PreviewPanel(QWidget):
 
         # main content widget
         view = QWidget()
-        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        view.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         vbox = QVBoxLayout(view)
         vbox.setContentsMargins(*PANEL_MARGIN)
         vbox.setSpacing(16)
@@ -162,6 +162,7 @@ class PreviewPanel(QWidget):
         # ── description ─────────────────────────────────────────────────────────
         vbox.addWidget(StrongBodyLabel(_i18n.tr("preview.description")))
         self.description_editor = TextEdit()
+        self.description_editor.setAcceptRichText(False)
         self.description_editor.setPlaceholderText(_i18n.tr("preview.no_description"))
         self.description_editor.setMinimumHeight(DESCRIPTION_MIN_HEIGHT)
         self.description_editor.setMaximumHeight(DESCRIPTION_MAX_HEIGHT)

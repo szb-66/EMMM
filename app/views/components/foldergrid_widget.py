@@ -1,7 +1,7 @@
 # App/views/components/foldergrid widget.py
 
-from PyQt6.QtCore import QSignalBlocker, pyqtSignal, QSize, Qt, QMimeData, QByteArray
-from PyQt6.QtGui import QAction, QMouseEvent, QDrag
+from PyQt6.QtCore import QSignalBlocker, QPoint, pyqtSignal, QSize, Qt, QMimeData, QByteArray
+from PyQt6.QtGui import QAction, QPixmap, QMouseEvent, QDrag, QPainter
 from PyQt6.QtWidgets import QWidget, QApplication
 from qfluentwidgets import (
     CardWidget,
@@ -293,6 +293,29 @@ class FolderGridItemWidget(CardWidget):
 
         menu.exec(event.globalPos())
 
+    def _build_drag_pixmap(self) -> QPixmap:
+        thumb_pixmap = self.thumbnail_label.pixmap()
+        if thumb_pixmap and not thumb_pixmap.isNull():
+            capped = thumb_pixmap.scaled(
+                96, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
+            )
+            if not capped.isNull():
+                result = QPixmap(capped.size())
+                result.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(result)
+                painter.setOpacity(0.5)
+                painter.drawPixmap(0, 0, capped)
+                painter.end()
+                return result
+        fallback = self.grab()
+        result = QPixmap(fallback.size())
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        painter.setOpacity(0.5)
+        painter.drawPixmap(0, 0, fallback)
+        painter.end()
+        return result
+
     def mousePressEvent(self, event):
         """Flow 5.2: Notifies the main view that this item was selected for preview.
         Single-click always updates selection; navigation is handled by double-click."""
@@ -319,8 +342,18 @@ class FolderGridItemWidget(CardWidget):
         mime = QMimeData()
         mime.setData(EMMM_MOD_MIME_TYPE, QByteArray(item_id.encode("utf-8")))
         drag.setMimeData(mime)
+
+        pixmap = self._build_drag_pixmap()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
+
         self._drag_start_pos = None
-        drag.exec(Qt.DropAction.MoveAction)
+
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.DragMoveCursor)
+            drag.exec(Qt.DropAction.MoveAction)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def dragEnterEvent(self, event):
         """Accepts internal mod drags (for move-into-folder and auto-group-on-mod)."""
@@ -328,6 +361,12 @@ class FolderGridItemWidget(CardWidget):
             event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat(EMMM_MOD_MIME_TYPE):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
 
     def dropEvent(self, event):
         """Handles a dropped mod: move into navigable folder, or auto-group with another mod."""

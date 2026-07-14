@@ -55,7 +55,7 @@ class IniFileGroupWidget(QFrame):
         h.setSpacing(8)
 
         self.title_label = StrongBodyLabel(title, self)
-        # self.title_label.setElideMode(Qt.TextElideMode.ElideRight)  # potong bila sempit
+        self.title_label.setWordWrap(True)
         self.title_label.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
