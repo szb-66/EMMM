@@ -40,9 +40,22 @@ ViewModels manage panel state, coordinate data flow between Views and Services, 
 
 ## ModListViewModel (×2 instances)
 
-[app/viewmodels/mod_list_vm.py](app/viewmodels/mod_list_vm.py)
+[app/viewmodels/mod_list_vm/](app/viewmodels/mod_list_vm/) — package with 7 mixins + composition root
 
-**Role:** Manages the item list for either `CONTEXT_OBJECTLIST` or `CONTEXT_FOLDERGRID`. Handles loading, filtering, searching, sorting, and single-item operations.
+**Role:** Manages the item list for either `CONTEXT_OBJECTLIST` or `CONTEXT_FOLDERGRID`. Handles loading, filtering, searching, sorting, drag-and-drop, and single-item operations.
+
+After ADR 0001 (large-file modularization), `ModListViewModel` was split from a monolithic `mod_list_vm.py` into a package:
+
+| File | Mixin | Responsibilities |
+|------|-------|-----------------|
+| `_load_mixin.py` | `_LoadMixin` | Skeleton loading, lazy hydration, race-condition token guard |
+| `_filter_mixin.py` | `_FilterMixin` | Category filter, detail filters, search with debounce, `apply_filters_and_search` |
+| `_crud_mixin.py` | `_CrudMixin` | Toggle status/pin, rename, delete, move to folder, create folder, auto-group |
+| `_creation_mixin.py` | `_CreationMixin` | Object creation workflow, drag-drop archive import |
+| `_reconciliation_mixin.py` | `_ReconciliationMixin` | DB reconciliation dry-run + full sync, type conversion, object update |
+| `_exclusive_activation_mixin.py` | `_ExclusiveActivationMixin` | "Enable Only This" exclusive-activation workflow |
+| `_thumbnail_mixin.py` | `_ThumbnailMixin` | Thumbnail retrieval delegation and async-generation callback |
+| `viewmodel.py` | `ModListViewModel` | Composition root inheriting all mixins; backwards-compat via `__init__.py` re-export |
 
 ### Context-dependent behavior
 | Feature | OBJECTLIST | FOLDERGRID |
@@ -64,6 +77,7 @@ ViewModels manage panel state, coordinate data flow between Views and Services, 
 | `active_object_modified` | Domino: notify MainWindowVM |
 | `foldergrid_item_modified` | Domino: notify PreviewPanel |
 | `active_object_deleted` | Domino: clear dependent views |
+| `move_to_character_requested` | Cross-VM DnD: `(dropped_id: str, target_character: object)` — wired by MainWindowVM |
 
 ### Loading flow
 1. `load_items(path, game, is_new_root)` → increment `current_load_token` (race-condition guard) → emit `loading_started` → start Worker for `get_item_skeletons`
@@ -84,6 +98,27 @@ Operations that change an item's sort key (status toggle, pin toggle) MUST call 
 
 - `toggle_item_status`, `toggle_pin_status`, `rename_item`, `delete_item`
 - `convert_object_type`, `update_object_item`, `initiate_sync_for_item`
+
+### Drag-and-drop operations
+
+Internal mod reordering and cross-VM moves use `EMMM_MOD_MIME_TYPE` (`"application/x-emmm-mod"`) for MIME data.
+
+| Method | Description |
+|--------|-------------|
+| `move_item_to_folder(item_id, target_dir)` | Move a mod into a navigable folder (Worker → ModService.move_item_to) |
+| `create_new_folder(parent, name)` | Create empty navigable folder |
+| `auto_group_items(items, group_name, parent)` | Move multiple items into a new group folder |
+| `move_to_character_requested(dropped_id, target)` | Signal: emit when mod is dropped on an objectlist character row |
+
+### Drag-and-drop wiring (MainWindowVM)
+
+`MainWindowViewModel` wires the cross-VM DnD signal:
+
+```
+objectlist_vm.move_to_character_requested
+  → _on_move_to_character_requested
+    → foldergrid_vm.move_item_to_folder
+```
 
 ### Requirement: Toggle status applies sort immediately
 

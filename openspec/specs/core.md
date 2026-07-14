@@ -25,6 +25,7 @@
 | `CONTEXT_OBJECTLIST` | `"objectlist"` | Objectlist VM context key |
 | `CONTEXT_FOLDERGRID` | `"foldergrid"` | Foldergrid VM context key |
 | `KNOW_XXMI_FOLDERS` | `{"GIMI", "SRMI", "WWMI"}` | Known game identifiers |
+| `EMMM_MOD_MIME_TYPE` | `"application/x-emmm-mod"` | Custom MIME type for internal drag-and-drop of mods |
 
 ## GlobalSignals
 
@@ -73,3 +74,32 @@ Usage note: Most communication should use ViewModel-specific signals. `GlobalSig
 
 - Configures `loguru` with console + file handlers
 - `set_log_directory(path)` — set log output directory before first write
+
+## i18n
+
+[app/core/i18n.py](app/core/i18n.py)
+
+JSON-driven translation engine with zero external dependencies.
+
+| Attribute/Function | Description |
+|---|---|
+| `tr(key, **fmt)` | Look up translation key in active locale dict; fallback to English, then raw key. Supports `str.format(**fmt)` interpolation. |
+| `set_language(lang)` | Switch active language by loading `app/assets/locales/{lang}.json` |
+| `get_current_language()` | Return current language code (`"en"` or `"zh"`) |
+| `AVAILABLE_LANGUAGES` | `{"en": "English", "zh": "中文"}` |
+| `DEFAULT_LANGUAGE` | `"zh"` — Chinese is the default language |
+
+### Locale files
+
+- `app/assets/locales/en.json` — 328 translation keys
+- `app/assets/locales/zh.json` — 328 translation keys
+- Keys follow dot-separated namespaces: `common.*`, `main.*`, `settings.*`, `vm.*`, `foldergrid.*`, `objectlist.*`, `preview.*`, `thumb.*`, etc.
+- Module self-check (`if __name__ == "__main__"`) asserts key parity across all locale files
+
+### Fallback chain
+
+Active locale → English (`en.json`) → raw key string.
+
+### Usage pattern
+
+All UI strings are resolved at widget construction time via `tr()`. Language changes require application restart (widgets call `tr()` in `__init__`). Language preference is persisted in `config.json` under `language` field.

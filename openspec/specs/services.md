@@ -32,9 +32,20 @@ Known game folder keys: `{"GIMI", "SRMI", "WWMI"}` (from `constants.py`).
 
 ## ModService
 
-[app/services/mod_service.py](app/services/mod_service.py)
+[app/services/mod_service/](app/services/mod_service/) — package with 5 mixins + composition root
 
 **Responsibility:** All atomic filesystem + JSON operations for individual mod items.
+
+After ADR 0001 (large-file modularization), `ModService` was split from a monolithic `mod_service.py` into a package with mixin classes and a thin composition root (`service.py`):
+
+| File | Mixin | Responsibilities |
+|------|-------|-----------------|
+| `_load_mixin.py` | `_LoadMixin` | Directory scanning, skeleton loading, lazy hydration, archive probing, reality-check logic |
+| `_toggle_mixin.py` | `_ToggleMixin` | Enable/disable with persist snapshot/restore |
+| `_crud_mixin.py` | `_CrudMixin` | Rename, delete, pin toggle, move, folder creation, auto-grouping, object conversion |
+| `_preview_mixin.py` | `_PreviewMixin` | Preview image add/remove/reorder, metadata JSON read/write |
+| `_creation_mixin.py` | `_CreationMixin` | Source analysis, archive extraction, manual object creation, mod-from-source creation |
+| `service.py` | `ModService` | Composition root inheriting all mixins; backwards-compat via `__init__.py` re-export |
 
 ### Loading
 | Method | Description |
@@ -50,6 +61,9 @@ Known game folder keys: `{"GIMI", "SRMI", "WWMI"}` (from `constants.py`).
 | `rename_item(item, new_name)` | Rename folder + rewrite JSON (read-before-rename pattern to avoid file locks) |
 | `delete_item(item)` | Move to recycle bin via `SystemUtils` |
 | `convert_object_type(item_id, path, new_type)` | Update `object_type` in `properties.json` |
+| `move_item_to(item_id, source, target_dir)` | Move folder + recompute ID (from `_crud_mixin`) |
+| `create_empty_folder(parent, name)` | Create empty navigable folder with encoded name (from `_crud_mixin`) |
+| `auto_group_items(items, group_name, parent)` | Move multiple items into a new folder (from `_crud_mixin`) |
 
 ### Metadata
 | Method | Description |
@@ -64,6 +78,16 @@ Known game folder keys: `{"GIMI", "SRMI", "WWMI"}` (from `constants.py`).
 | `add_preview_image(item, image_data)` | Save compressed image → update `info.json` |
 | `remove_preview_image(item, path)` | Recycle bin single image → update metadata |
 | `remove_all_preview_images(item)` | Recycle bin all images → clear metadata list |
+| `reorder_preview_images(item, image_paths)` | Reorder `preview_images` list in `info.json` + invalidate thumbnail cache (from `_preview_mixin`) |
+
+### Loading (mixin)
+| Method | Description |
+|--------|-------------|
+| `_parse_folder_name(name)` | Decode folder name to extract disabled prefix, pin suffix, and actual name |
+| `_generate_stable_id(rel_path)` | SHA1-based stable ID for item dedup |
+| `_scan_for_ini_files(folder)` | Recursively find `.ini` files in mod folder |
+| `_probe_archive_for_ini(archive_path)` | Peek into ZIP archives for `.ini` files via `zipfile.ZipFile.namelist()` without extraction |
+| `_reality_check(item, filesystem, json_meta)` | Sync physical file state with JSON metadata |
 
 ### Creation
 | Method | Description |
@@ -71,6 +95,11 @@ Known game folder keys: `{"GIMI", "SRMI", "WWMI"}` (from `constants.py`).
 | `analyze_source_path(path)` | Quick check if path is valid folder/archive, detect `.ini` presence |
 | `create_mod_from_source(source, output_name, parent, cancel_flag)` | Copy folder or extract archive → write skeleton `info.json`. Supports smart extraction (unwrap single-root archives). Password-protected archives detected. |
 | `create_manual_object(parent, data)` | Create folder + write `properties.json` + process thumbnail (Path/PIL/QImage sources) |
+| `create_foldergrid_item(parent, data)` | Create mod folder with name/pin state |
+| `create_objectlist_item(parent, data)` | Create object folder with metadata |
+| `_smart_extract_archive(archive_path, dest, cancel_flag)` | Extract with single-root unwrap detection |
+| `_encode_folder_name(name, enabled, pinned)` | Encode name with DISABLED prefix and/or _pin suffix |
+| `_compute_item_id(parent, name)` | Recompute stable ID after folder rename/move |
 
 ## DatabaseService
 
@@ -266,3 +295,16 @@ Shared helpers used by both `ModService` and `IniKeyParsingService`:
 - `write_user_persist_values(path, values)` — write `$persist` key-value pairs
 - `normalize_persist_key(key)` — normalize path separators in persist keys
 - `strip_disabled_prefix(name)` — remove `DISABLED ` prefix from folder names
+
+## NoteService
+
+[app/services/note_service.py](app/services/note_service.py)
+
+**Responsibility:** Read/write per-mod keybinding notes persisted in `_emm_notes.json`.
+
+| Method | Description |
+|--------|-------------|
+| `load_notes(mod_path)` | Read `_emm_notes.json` from mod directory; returns list of note dicts |
+| `save_notes(mod_path, notes)` | Atomic write (tempfile + replace) notes to `_emm_notes.json` |
+
+Notes format: list of `{"id": str, "content": str, "updated_at": str}` dicts.

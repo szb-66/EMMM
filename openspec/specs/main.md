@@ -25,7 +25,7 @@ main.py  (composition root — wires all dependencies)
   ├── Services (business logic, I/O, async workers)
   │   ├── ConfigService       — read/write config.json
   │   ├── GameService         — XXMI launcher detection, game discovery
-  │   ├── ModService          — atomic filesystem operations (toggle, rename, delete, create)
+  │   ├── ModService          — atomic filesystem operations (split into 5 mixins per ADR 0001)
   │   ├── DatabaseService     — load/query schema.json & game object databases
   │   ├── ThumbnailService    — generate, cache (L1 memory + L2 disk) thumbnails
   │   ├── IniKeyParsingService— parse & save 3DMigoto .ini keybindings
@@ -36,7 +36,7 @@ main.py  (composition root — wires all dependencies)
   │
   ├── ViewModels (state & logic for each panel)
   │   ├── MainWindowViewModel       — top-level orchestrator, active game/object tracking
-  │   ├── ModListViewModel          — manages objectlist & foldergrid item lists (×2 instances)
+  │   ├── ModListViewModel          — manages objectlist & foldergrid item lists (×2 instances, 7 mixins per ADR 0001)
   │   ├── PreviewPanelViewModel     — selections, description, .ini editing, thumbnails
   │   └── SettingsViewModel         — game list, launcher, presets (transactional dialog state)
   │
@@ -62,6 +62,11 @@ main.py  (composition root — wires all dependencies)
       ├── AsyncUtils    — Worker QRunnable, debounce
       ├── UiUtils       — toasts, confirm dialogs
       └── LoggerUtils   — loguru configuration
+
+  Core
+      ├── Constants     — app-wide string/pattern constants
+      ├── Signals       — GlobalSignals singleton
+      └── i18n          — JSON-driven translation engine (tr, set_language)
 ```
 
 ### Context separation
@@ -78,7 +83,7 @@ All I/O (disk scan, image processing, .ini parsing, archive extraction) runs off
 
 ### Data flow
 
-1. **Startup:** `main.py` → creates Services → ViewModels → MainWindow → `start_initial_load()` → config loads asynchronously → `_process_config_update()` → `_determine_active_game()` → `set_current_game()` → `objectlist_vm.load_items()`
+1. **Startup:** `main.py` → creates Services → ViewModels → MainWindow → loads language from config → `start_initial_load()` → config loads asynchronously → `_process_config_update()` → `_determine_active_game()` → `set_current_game()` → `objectlist_vm.load_items()`
 2. **Navigation:** select game → load objects → select object → load foldergrid → select mod → load preview + .ini
 3. **Mutation:** UI action → ViewModel method → Worker (ModService) → signal result → ViewModel state update → signal → View UI refresh
 4. **Domino effects:** Object toggle renames folder → `foldergrid_item_modified` → preview panel updates itself
@@ -90,3 +95,5 @@ All I/O (disk scan, image processing, .ini parsing, archive extraction) runs off
 - **File-system-as-database:** Mod state (enabled/disabled, pinned) is encoded in the folder name itself (`DISABLED ` prefix, `_pin` suffix). JSON metadata files (`properties.json`, `info.json`) supplement with richer data.
 - **Watcher suppression:** Internal file operations temporarily suppress the filesystem watcher to avoid redundant reloads.
 - **Async I/O service:** `IniKeyParsingService.load_keybindings_async()` is the sole `asyncio` entry point (wrapped in `asyncio.run()` inside a worker).
+- **i18n:** JSON-driven translation engine (`app/core/i18n.py`) with 328 keys in `en.json` and `zh.json`. Language preference persisted in config, applied at startup before widget construction.
+- **Drag-and-drop:** Internal mod reordering via custom MIME type (`EMMM_MOD_MIME_TYPE`). Cross-VM moves (foldergrid → objectlist) wired through `MainWindowViewModel`. External file drops on panels for mod import and image attachment.

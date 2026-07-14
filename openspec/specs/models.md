@@ -31,6 +31,7 @@ All model classes are immutable `frozen=True` dataclasses. No instance is ever m
 | `splitter_sizes` | `tuple[int,int,int] \| None` | Restored splitter layout |
 | `description_editor_height` | `int \| None` | Preview panel editor height |
 | `object_list_view_mode` | `str` | `"list"` or `"card"` |
+| `language` | `str` | UI language code, default `"zh"` |
 
 ## BaseModItem
 

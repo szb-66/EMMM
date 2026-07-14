@@ -1,6 +1,6 @@
 # Views
 
-All views are PyQt6 widgets styled with `qfluentwidgets`. They follow a passive-view pattern — they observe ViewModel signals and forward user actions to ViewModel slots.
+All views are PyQt6 widgets styled with `qfluentwidgets`. They follow a passive-view pattern — they observe ViewModel signals and forward user actions to ViewModel slots. All user-facing strings use `i18n.tr(key, **fmt)` for multi-language support.
 
 ## MainWindow
 
@@ -75,7 +75,16 @@ All VM toast signals are connected to `_on_toast_requested` which creates `InfoB
 - `FlowGridWidget` (ScrollArea) — grid of `FolderGridItemWidget` cards
 - `PrimaryDropDownPushButton` (Create Mod) — add from archives or folder
 - `PopUpAniStackedWidget` — switches between placeholder, scroll area, empty state, and shimmer
-- Drag & drop enabled via `dragEnterEvent`/`dropEvent`
+- Drag & drop: `FolderGridPanel` accepts external OS file/folder drops for mod import via `dragEnterEvent`/`dropEvent`
+- Context menu (right-click empty area): "New Folder..." for creating navigable folders
+
+### Drag-and-drop (internal)
+- `FolderGridItemWidget` is both drag source and drop target
+- Drag source: initiates `QDrag` with `EMMM_MOD_MIME_TYPE` carrying the mod's ID
+- Drop on folder: moves mod into that folder
+- Drop on another mod: prompts auto-group dialog
+- `ObjectListItemWidget` accepts drops from foldergrid (`dragEnterEvent`/`dropEvent`) → emits `move_to_character_requested`
+- `ThumbnailWidget` accepts image file drops from OS to add preview images
 
 ### Key signals
 - `item_selected(object)` → forwarded to `PreviewPanelViewModel.set_current_item`
